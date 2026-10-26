@@ -66,6 +66,7 @@ let demoUsers = [
 let demoShops = [
   { id: 'shop-demo', name: 'The Daily Counter', email: 'owner@counterpoint.local', phone: '+94 77 123 4567', address: 'Colombo, Sri Lanka', active: true }
 ];
+const demoIdempotencyCache = new Map();
 const demoMode = !pool;
 
 const safeUser = u => ({
@@ -334,7 +335,7 @@ app.post('/api/admin/shops', auth, roles('admin'), async (req, res) => {
   }
 });
 
-// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query)
+// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query & Idempotent)
 app.post('/api/sales', auth, roles('owner'), async (req, res) => {
   const {
     orderType,
@@ -345,8 +346,33 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
     amountReceived = 0
   } = req.body;
 
+  const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey || null;
+
   if (!['takeaway', 'delivery', 'dining'].includes(orderType) || !Array.isArray(items) || !items.length) {
     return res.status(400).json({ error: 'Choose an order type and at least one product.' });
+  }
+
+  // Idempotency check: Return existing result if duplicate request is received
+  if (idempotencyKey) {
+    if (pool) {
+      try {
+        const existing = await query(
+          'SELECT response_code, response_body FROM idempotency_keys WHERE shop_id = $1 AND key = $2',
+          [req.user.shop_id, idempotencyKey]
+        );
+        if (existing.length > 0) {
+          return res.status(existing[0].response_code).json(existing[0].response_body);
+        }
+      } catch (err) {
+        console.error('Idempotency lookup warning:', err.message);
+      }
+    } else {
+      const cacheKey = `${req.user.shop_id}:${idempotencyKey}`;
+      if (demoIdempotencyCache.has(cacheKey)) {
+        const cached = demoIdempotencyCache.get(cacheKey);
+        return res.status(cached.code).json(cached.body);
+      }
+    }
   }
 
   if (!pool) {
@@ -426,21 +452,27 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
       ]
     )).rows[0];
 
-    // Insert sale items and update database stock
+    // Insert sale items, audit stock movement ledger, and update database stock
     for (const l of lines) {
       await client.query(
         'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)',
         [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.lineDiscount, l.notes, l.total]
       );
+
+      // Double-entry stock ledger
+      await client.query(
+        'INSERT INTO stock_movements(shop_id, product_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+        [req.user.shop_id, l.p.id, -l.q, 'sale', sale.bill_number]
+      );
+
+      // Decrement current stock
       await client.query(
         'UPDATE products SET stock = stock - $1 WHERE id = $2',
         [l.q, l.p.id]
       );
     }
 
-    await client.query('COMMIT');
-
-    res.status(201).json({
+    const responsePayload = {
       sale,
       items: lines.map(l => ({
         name: l.p.name,
@@ -451,7 +483,19 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
         notes: l.notes,
         total: l.total
       }))
-    });
+    };
+
+    // Store Idempotency key atomically within transaction
+    if (idempotencyKey) {
+      await client.query(
+        'INSERT INTO idempotency_keys(key, shop_id, response_code, response_body) VALUES($1, $2, $3, $4) ON CONFLICT (shop_id, key) DO NOTHING',
+        [idempotencyKey, req.user.shop_id, 201, JSON.stringify(responsePayload)]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    res.status(201).json(responsePayload);
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(400).json({ error: e.message });

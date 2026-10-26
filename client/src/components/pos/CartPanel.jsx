@@ -26,7 +26,8 @@ export default function CartPanel({
   setDiscount,
   discountMode,
   setDiscountMode,
-  onCheckout
+  onCheckout,
+  checkoutSubmitting = false
 }) {
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
 
@@ -223,9 +224,11 @@ export default function CartPanel({
 
           <button
             className="checkout-btn"
+            disabled={checkoutSubmitting}
+            style={{ opacity: checkoutSubmitting ? 0.7 : 1, cursor: checkoutSubmitting ? 'not-allowed' : 'pointer' }}
             onClick={() => onCheckout({ subtotal, billDiscount, total })}
           >
-            Charge {money(total)} <ArrowDownRight size={17} />
+            {checkoutSubmitting ? 'Processing Order…' : `Charge ${money(total)}`} <ArrowDownRight size={17} />
           </button>
 
           <div className="secure-note">

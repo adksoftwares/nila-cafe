@@ -53,6 +53,7 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
+  const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
 
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -192,7 +193,12 @@ export default function App() {
   };
 
   const handleCheckout = async ({ subtotal, billDiscount, total }) => {
-    if (!cart.length) return;
+    if (!cart.length || checkoutSubmitting) return;
+
+    setCheckoutSubmitting(true);
+    const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : 'idem-' + Date.now() + '-' + Math.random().toString(36).slice(2);
 
     const sale = {
       id: Date.now(),
@@ -220,6 +226,9 @@ export default function App() {
       if (token && apiMode === 'connected') {
         const data = await api('/sales', {
           method: 'POST',
+          headers: {
+            'Idempotency-Key': idempotencyKey
+          },
           body: JSON.stringify({
             orderType,
             tableNumber: orderType === 'dining' ? tableNumber : null,
@@ -253,6 +262,8 @@ export default function App() {
       setDiscount(0);
     } catch (e) {
       flash(e.message);
+    } finally {
+      setCheckoutSubmitting(false);
     }
   };
 
@@ -363,6 +374,7 @@ export default function App() {
               discountMode={discountMode}
               setDiscountMode={setDiscountMode}
               onCheckout={handleCheckout}
+              checkoutSubmitting={checkoutSubmitting}
             />
           )}
 

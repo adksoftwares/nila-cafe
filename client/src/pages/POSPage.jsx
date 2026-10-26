@@ -24,7 +24,8 @@ export default function POSPage({
   setDiscount,
   discountMode,
   setDiscountMode,
-  onCheckout
+  onCheckout,
+  checkoutSubmitting
 }) {
   const currentHour = new Date().getHours();
   const greeting =
@@ -78,6 +79,7 @@ export default function POSPage({
           discountMode={discountMode}
           setDiscountMode={setDiscountMode}
           onCheckout={onCheckout}
+          checkoutSubmitting={checkoutSubmitting}
         />
       </div>
     </>

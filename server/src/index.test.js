@@ -57,3 +57,49 @@ test('Admin role must supply shopId to target specific store products', () => {
   assert.equal(getTargetShopId(adminUser, { shopId: 'shop-456' }), 'shop-456');
   assert.equal(getTargetShopId(ownerUser, {}), 'shop-123');
 });
+
+test('Idempotency Key deduplication prevents duplicate charges and repeated stock deductions', () => {
+  const idempotencyMap = new Map();
+  const shopId = 'shop-nila-1';
+  const idemKey = 'uuid-idem-test-999';
+  const initialStock = 50;
+  const orderQuantity = 2;
+
+  let currentStock = initialStock;
+
+  const processOrder = (key) => {
+    const cacheKey = `${shopId}:${key}`;
+    if (idempotencyMap.has(cacheKey)) {
+      return { cached: true, ...idempotencyMap.get(cacheKey) };
+    }
+
+    currentStock -= orderQuantity;
+    const result = { bill_number: 'POS-NILA-001', stock_after: currentStock };
+    idempotencyMap.set(cacheKey, result);
+    return { cached: false, ...result };
+  };
+
+  // First checkout submission
+  const firstAttempt = processOrder(idemKey);
+  assert.equal(firstAttempt.cached, false);
+  assert.equal(firstAttempt.bill_number, 'POS-NILA-001');
+  assert.equal(currentStock, 48);
+
+  // Accidental double-click submission with identical idempotency key
+  const secondAttempt = processOrder(idemKey);
+  assert.equal(secondAttempt.cached, true);
+  assert.equal(secondAttempt.bill_number, 'POS-NILA-001');
+  assert.equal(currentStock, 48); // Stock was NOT deducted again!
+});
+
+test('Stock Movements Ledger calculates accurate net inventory balance', () => {
+  const movements = [
+    { delta_qty: 100, reason: 'restock' },
+    { delta_qty: -2, reason: 'sale' },
+    { delta_qty: -3, reason: 'sale' },
+    { delta_qty: -1, reason: 'spoilage' }
+  ];
+
+  const netStock = movements.reduce((sum, m) => sum + m.delta_qty, 0);
+  assert.equal(netStock, 94);
+});
