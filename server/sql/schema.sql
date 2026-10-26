@@ -62,11 +62,40 @@ CREATE TABLE IF NOT EXISTS shift_cash_adjustments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Customer Loyalty Directory
+CREATE TABLE IF NOT EXISTS customers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT,
+  loyalty_points INTEGER NOT NULL DEFAULT 0 CHECK(loyalty_points >= 0),
+  total_spent NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_visits INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, phone)
+);
+
+-- Promotional Campaigns & Discount Coupons
+CREATE TABLE IF NOT EXISTS promotions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('percentage', 'fixed')),
+  value NUMERIC(12,2) NOT NULL CHECK(value > 0),
+  min_order_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, code)
+);
+
 CREATE TABLE IF NOT EXISTS sales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id),
   user_id UUID NOT NULL REFERENCES users(id),
   shift_id UUID REFERENCES shifts(id) ON DELETE SET NULL,
+  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
   bill_number TEXT NOT NULL,
   order_type TEXT NOT NULL CHECK(order_type IN ('takeaway','delivery','dining')),
   table_number TEXT,
@@ -78,6 +107,9 @@ CREATE TABLE IF NOT EXISTS sales (
   subtotal NUMERIC(12,2) NOT NULL,
   discount NUMERIC(12,2) NOT NULL DEFAULT 0,
   total NUMERIC(12,2) NOT NULL,
+  points_earned INTEGER NOT NULL DEFAULT 0,
+  points_redeemed INTEGER NOT NULL DEFAULT 0,
+  promotion_code TEXT,
   payment_method TEXT NOT NULL DEFAULT 'cash',
   amount_received NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -293,3 +325,34 @@ CREATE POLICY audit_logs_tenant_isolation ON audit_logs
     current_setting('app.is_admin', true) = 'true'
     OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
   );
+
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS customers_tenant_isolation ON customers;
+CREATE POLICY customers_tenant_isolation ON customers
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotions FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS promotions_tenant_isolation ON promotions;
+CREATE POLICY promotions_tenant_isolation ON promotions
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+CREATE INDEX IF NOT EXISTS idx_customers_shop_phone ON customers(shop_id, phone);
+CREATE INDEX IF NOT EXISTS idx_promotions_shop ON promotions(shop_id);

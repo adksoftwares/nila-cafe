@@ -15,6 +15,7 @@ import ShopModal from './components/modals/ShopModal.jsx';
 import ShiftModal from './components/modals/ShiftModal.jsx';
 import PaymentModal from './components/modals/PaymentModal.jsx';
 import VoidModal from './components/modals/VoidModal.jsx';
+import CustomerModal from './components/modals/CustomerModal.jsx';
 
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
@@ -22,6 +23,7 @@ import POSPage from './pages/POSPage.jsx';
 import KDSPage from './pages/KDSPage.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
 import SalesPage from './pages/SalesPage.jsx';
+import CustomersPage from './pages/CustomersPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import AdminShopsPage from './pages/AdminShopsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
@@ -53,6 +55,12 @@ export default function App() {
   const [category, setCategory] = useState('All items');
   const [discountMode, setDiscountMode] = useState('percent');
   const [discount, setDiscount] = useState(0);
+
+  const [customers, setCustomers] = useState([]);
+  const [promotions, setPromotions] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const [appliedPromotion, setAppliedPromotion] = useState(null);
 
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState('');
@@ -121,6 +129,24 @@ export default function App() {
       .catch(() => {});
   };
 
+  const loadCustomers = () => {
+    if (!token || !user || user.role === 'admin') return;
+    api('/customers')
+      .then(d => {
+        if (d.customers) setCustomers(d.customers);
+      })
+      .catch(() => {});
+  };
+
+  const loadPromotions = () => {
+    if (!token || !user || user.role === 'admin') return;
+    api('/promotions')
+      .then(d => {
+        if (d.promotions) setPromotions(d.promotions);
+      })
+      .catch(() => {});
+  };
+
   // Load shop data / admin data / shift data
   useEffect(() => {
     if (!user) return;
@@ -139,6 +165,8 @@ export default function App() {
 
     loadShift();
     loadSales();
+    loadCustomers();
+    loadPromotions();
   }, [user, token]);
 
   const categories = useMemo(
@@ -232,9 +260,9 @@ export default function App() {
     setCart(old => old.filter(i => i.product.id !== id));
   };
 
-  const handleCheckout = ({ subtotal, billDiscount, total }) => {
+  const handleCheckout = (checkoutDetails) => {
     if (!cart.length || checkoutSubmitting) return;
-    setPendingCheckout({ subtotal, billDiscount, total });
+    setPendingCheckout(checkoutDetails);
     setModal('payment');
   };
 
@@ -242,7 +270,17 @@ export default function App() {
     if (!pendingCheckout || !cart.length || checkoutSubmitting) return;
 
     setCheckoutSubmitting(true);
-    const { subtotal, billDiscount, total } = pendingCheckout;
+    const {
+      subtotal,
+      billDiscount,
+      total,
+      customerId,
+      customerName,
+      customerPhone,
+      pointsEarned,
+      pointsRedeemed,
+      promotionCode
+    } = pendingCheckout;
 
     const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -256,6 +294,12 @@ export default function App() {
       subtotal,
       discount: billDiscount,
       total,
+      customer_id: customerId || null,
+      customer_name: customerName || null,
+      customer_phone: customerPhone || null,
+      points_earned: pointsEarned || 0,
+      points_redeemed: pointsRedeemed || 0,
+      promotion_code: promotionCode || null,
       payment_method: primaryMethod,
       amount_received: amountReceived,
       payments: payments,
@@ -290,6 +334,9 @@ export default function App() {
               discount: 0
             })),
             discount: billDiscount,
+            customerId,
+            pointsRedeemed,
+            promotionCode,
             payments,
             paymentMethod: primaryMethod,
             amountReceived
@@ -298,6 +345,9 @@ export default function App() {
         sale.bill_number = data.sale.bill_number;
         sale.total = Number(data.sale.total);
         sale.created_at = data.sale.created_at;
+        if (data.sale.points_earned) sale.points_earned = data.sale.points_earned;
+        if (data.sale.points_redeemed) sale.points_redeemed = data.sale.points_redeemed;
+        if (data.sale.promotion_code) sale.promotion_code = data.sale.promotion_code;
         if (data.payments) sale.payments = data.payments;
       } else if (apiMode !== 'demo') {
         flash('API is offline: this checkout is saved to local workstation only.');
@@ -313,13 +363,32 @@ export default function App() {
       setLastReceipt(sale);
       setCart([]);
       setDiscount(0);
+      setSelectedCustomer(null);
+      setPointsToRedeem(0);
+      setAppliedPromotion(null);
       setPendingCheckout(null);
       loadShift();
       loadSales();
+      loadCustomers();
     } catch (e) {
       flash(e.message);
     } finally {
       setCheckoutSubmitting(false);
+    }
+  };
+
+  const handleCreateCustomer = async (custForm) => {
+    try {
+      const res = await api('/customers', {
+        method: 'POST',
+        body: JSON.stringify(custForm)
+      });
+      flash(`Customer ${res.customer.name} registered.`);
+      loadCustomers();
+      setSelectedCustomer(res.customer);
+      return res;
+    } catch (err) {
+      throw err;
     }
   };
 
@@ -496,6 +565,15 @@ export default function App() {
               setDiscount={setDiscount}
               discountMode={discountMode}
               setDiscountMode={setDiscountMode}
+              customers={customers}
+              selectedCustomer={selectedCustomer}
+              setSelectedCustomer={setSelectedCustomer}
+              pointsToRedeem={pointsToRedeem}
+              setPointsToRedeem={setPointsToRedeem}
+              appliedPromotion={appliedPromotion}
+              setAppliedPromotion={setAppliedPromotion}
+              promotions={promotions}
+              onOpenAddCustomer={() => setModal('customer')}
               onCheckout={handleCheckout}
               checkoutSubmitting={checkoutSubmitting}
             />
@@ -526,6 +604,13 @@ export default function App() {
                 setSelectedVoidSale(s);
                 setModal('void');
               }}
+            />
+          )}
+
+          {page === 'Customers' && (
+            <CustomersPage
+              customers={customers}
+              onOpenAddCustomer={() => setModal('customer')}
             />
           )}
 
@@ -608,6 +693,13 @@ export default function App() {
             setModal('');
             setSelectedVoidSale(null);
           }}
+        />
+      )}
+
+      {modal === 'customer' && (
+        <CustomerModal
+          onSave={handleCreateCustomer}
+          onClose={() => setModal('')}
         />
       )}
 

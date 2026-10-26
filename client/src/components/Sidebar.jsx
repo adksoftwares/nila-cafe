@@ -10,7 +10,8 @@ import {
   ShoppingCart,
   Package,
   Receipt,
-  ChefHat
+  ChefHat,
+  Users
 } from 'lucide-react';
 
 export default function Sidebar({ user, page, setPage, salesCount, shopName, onLogout, onFlash }) {
@@ -27,6 +28,7 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
         { name: 'Kitchen (KDS)', icon: ChefHat },
         { name: 'Products', icon: Package },
         { name: 'Sales', icon: Receipt },
+        { name: 'Customers', icon: Users },
         { name: 'Reports', icon: BarChart3 },
         { name: 'Settings', icon: Settings }
       ];

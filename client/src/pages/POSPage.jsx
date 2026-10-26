@@ -24,6 +24,15 @@ export default function POSPage({
   setDiscount,
   discountMode,
   setDiscountMode,
+  customers,
+  selectedCustomer,
+  setSelectedCustomer,
+  pointsToRedeem,
+  setPointsToRedeem,
+  appliedPromotion,
+  setAppliedPromotion,
+  promotions,
+  onOpenAddCustomer,
   onCheckout,
   checkoutSubmitting
 }) {
@@ -78,6 +87,15 @@ export default function POSPage({
           setDiscount={setDiscount}
           discountMode={discountMode}
           setDiscountMode={setDiscountMode}
+          customers={customers}
+          selectedCustomer={selectedCustomer}
+          setSelectedCustomer={setSelectedCustomer}
+          pointsToRedeem={pointsToRedeem}
+          setPointsToRedeem={setPointsToRedeem}
+          appliedPromotion={appliedPromotion}
+          setAppliedPromotion={setAppliedPromotion}
+          promotions={promotions}
+          onOpenAddCustomer={onOpenAddCustomer}
           onCheckout={onCheckout}
           checkoutSubmitting={checkoutSubmitting}
         />

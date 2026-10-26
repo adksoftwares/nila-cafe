@@ -110,6 +110,77 @@ let demoUsers = [
 let demoShops = [
   { id: 'shop-demo', name: 'The Daily Counter', email: 'owner@counterpoint.local', phone: '+94 77 123 4567', address: 'Colombo, Sri Lanka', active: true }
 ];
+let demoCustomers = [
+  {
+    id: 'cust-1',
+    shop_id: 'shop-demo',
+    name: 'Kasun Perera',
+    phone: '0771234567',
+    email: 'kasun@gmail.com',
+    loyalty_points: 240,
+    total_spent: 24000,
+    total_visits: 12,
+    created_at: new Date(Date.now() - 3600000 * 24 * 30).toISOString()
+  },
+  {
+    id: 'cust-2',
+    shop_id: 'shop-demo',
+    name: 'Fatima Nazeer',
+    phone: '0719876543',
+    email: 'fatima.n@outlook.com',
+    loyalty_points: 150,
+    total_spent: 15500,
+    total_visits: 8,
+    created_at: new Date(Date.now() - 3600000 * 24 * 15).toISOString()
+  },
+  {
+    id: 'cust-3',
+    shop_id: 'shop-demo',
+    name: 'Rohan De Silva',
+    phone: '0754433221',
+    email: 'rohan.desilva@yahoo.com',
+    loyalty_points: 80,
+    total_spent: 8000,
+    total_visits: 4,
+    created_at: new Date(Date.now() - 3600000 * 24 * 5).toISOString()
+  }
+];
+
+let demoPromotions = [
+  {
+    id: 'promo-1',
+    shop_id: 'shop-demo',
+    code: 'WELCOME10',
+    title: '10% Welcome Discount',
+    type: 'percentage',
+    value: 10,
+    min_order_amount: 500,
+    active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'promo-2',
+    shop_id: 'shop-demo',
+    code: 'CAFE500',
+    title: 'LKR 500 Off Large Orders',
+    type: 'fixed',
+    value: 500,
+    min_order_amount: 2500,
+    active: true,
+    created_at: new Date().toISOString()
+  },
+  {
+    id: 'promo-3',
+    shop_id: 'shop-demo',
+    code: 'HAPPYHOUR',
+    title: '15% Happy Hour Special',
+    type: 'percentage',
+    value: 15,
+    min_order_amount: 1000,
+    active: true,
+    created_at: new Date().toISOString()
+  }
+];
 const demoIdempotencyCache = new Map();
 let demoShift = {
   id: 'shift-demo-1',
@@ -429,6 +500,159 @@ app.post('/api/admin/shops', auth, roles('admin'), async (req, res) => {
     });
   } finally {
     client.release();
+  }
+});
+
+// ------------------- CUSTOMER LOYALTY & DIRECTORY ------------------- //
+
+// Customers: Search & List
+app.get('/api/customers', auth, async (req, res) => {
+  const q = String(req.query.query || '').trim();
+  try {
+    if (pool) {
+      let rows;
+      if (q) {
+        rows = await query(
+          'SELECT * FROM customers WHERE shop_id = $1 AND (name ILIKE $2 OR phone ILIKE $2) ORDER BY total_spent DESC LIMIT 50',
+          [req.user.shop_id, `%${q}%`],
+          req.user
+        );
+      } else {
+        rows = await query(
+          'SELECT * FROM customers WHERE shop_id = $1 ORDER BY total_spent DESC LIMIT 100',
+          [req.user.shop_id],
+          req.user
+        );
+      }
+      return res.json({ customers: rows });
+    }
+
+    let list = demoCustomers;
+    if (q) {
+      const lower = q.toLowerCase();
+      list = demoCustomers.filter(c => c.name.toLowerCase().includes(lower) || c.phone.includes(q));
+    }
+    res.json({ customers: list });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Customers: Create New Customer
+app.post('/api/customers', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+  const { name, phone, email = '' } = req.body;
+  const cleanName = String(name || '').trim();
+  const cleanPhone = String(phone || '').trim();
+  const cleanEmail = String(email || '').trim().toLowerCase() || null;
+
+  if (!cleanName || !cleanPhone) {
+    return res.status(400).json({ error: 'Customer name and phone number are required.' });
+  }
+
+  try {
+    if (pool) {
+      const existing = await query(
+        'SELECT * FROM customers WHERE shop_id = $1 AND phone = $2',
+        [req.user.shop_id, cleanPhone],
+        req.user
+      );
+      if (existing.length > 0) {
+        return res.status(409).json({ error: 'A customer with this phone number already exists.', customer: existing[0] });
+      }
+
+      const rows = await query(
+        'INSERT INTO customers(shop_id, name, phone, email) VALUES($1, $2, $3, $4) RETURNING *',
+        [req.user.shop_id, cleanName, cleanPhone, cleanEmail],
+        req.user
+      );
+      return res.status(201).json({ customer: rows[0] });
+    }
+
+    const existing = demoCustomers.find(c => c.phone === cleanPhone);
+    if (existing) {
+      return res.status(409).json({ error: 'A customer with this phone number already exists.', customer: existing });
+    }
+
+    const newCust = {
+      id: 'cust-' + Date.now(),
+      shop_id: req.user.shop_id,
+      name: cleanName,
+      phone: cleanPhone,
+      email: cleanEmail,
+      loyalty_points: 0,
+      total_spent: 0,
+      total_visits: 0,
+      created_at: new Date().toISOString()
+    };
+    demoCustomers.unshift(newCust);
+    res.status(201).json({ customer: newCust });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ------------------- PROMOTIONS & DISCOUNT CAMPAIGNS ------------------- //
+
+// Promotions: List Active Promotions
+app.get('/api/promotions', auth, async (req, res) => {
+  try {
+    if (pool) {
+      const rows = await query(
+        'SELECT * FROM promotions WHERE shop_id = $1 AND active = true ORDER BY created_at DESC',
+        [req.user.shop_id],
+        req.user
+      );
+      return res.json({ promotions: rows });
+    }
+
+    res.json({ promotions: demoPromotions.filter(p => p.active) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Promotions: Create Promotional Code
+app.post('/api/promotions', auth, roles('owner', 'manager'), async (req, res) => {
+  const { code, title, type, value, minOrderAmount = 0 } = req.body;
+  const cleanCode = String(code || '').trim().toUpperCase();
+  const cleanTitle = String(title || '').trim();
+  const val = Number(value);
+  const minAmt = Math.max(0, Number(minOrderAmount) || 0);
+
+  if (!cleanCode || !cleanTitle || !['percentage', 'fixed'].includes(type) || !Number.isFinite(val) || val <= 0) {
+    return res.status(400).json({ error: 'Valid promo code, title, type (percentage/fixed), and positive value required.' });
+  }
+  if (type === 'percentage' && val > 100) {
+    return res.status(400).json({ error: 'Percentage discount cannot exceed 100%.' });
+  }
+
+  try {
+    if (pool) {
+      const rows = await query(
+        'INSERT INTO promotions(shop_id, code, title, type, value, min_order_amount) VALUES($1, $2, $3, $4, $5, $6) RETURNING *',
+        [req.user.shop_id, cleanCode, cleanTitle, type, val, minAmt],
+        req.user
+      );
+      return res.status(201).json({ promotion: rows[0] });
+    }
+
+    const newPromo = {
+      id: 'promo-' + Date.now(),
+      shop_id: req.user.shop_id,
+      code: cleanCode,
+      title: cleanTitle,
+      type,
+      value: val,
+      min_order_amount: minAmt,
+      active: true,
+      created_at: new Date().toISOString()
+    };
+    demoPromotions.push(newPromo);
+    res.status(201).json({ promotion: newPromo });
+  } catch (e) {
+    res.status(e.code === '23505' ? 409 : 500).json({
+      error: e.code === '23505' ? 'A promotion with this code already exists.' : e.message
+    });
   }
 });
 
@@ -820,13 +1044,16 @@ app.patch('/api/kds/orders/:id/status', auth, roles('owner', 'manager', 'cashier
   }
 });
 
-// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query, Idempotent, Multi-Payment & Split Bill)
+// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query, Idempotent, Multi-Payment, Loyalty Points & Promotions)
 app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
   const {
     orderType,
     tableNumber = null,
     items = [],
     discount = 0,
+    customerId = null,
+    pointsRedeemed = 0,
+    promotionCode = null,
     payments = null, // Array of { method: 'cash'|'card'|'qr', amount, reference }
     paymentMethod = 'cash',
     amountReceived = 0
@@ -883,8 +1110,49 @@ app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), asy
       });
     }
 
-    const billDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
-    const total = Math.round(Math.max(0, subtotal - billDiscount) * 100) / 100;
+    // Check Promotion Code
+    let promoDiscount = 0;
+    let appliedPromoCode = null;
+    if (promotionCode) {
+      const cleanCode = String(promotionCode).trim().toUpperCase();
+      const promo = demoPromotions.find(p => p.code === cleanCode && p.active);
+      if (!promo) {
+        return res.status(400).json({ error: `Promotional code "${promotionCode}" is invalid or expired.` });
+      }
+      if (subtotal < promo.min_order_amount) {
+        return res.status(400).json({ error: `Order minimum of LKR ${promo.min_order_amount} required to use promo code "${promotionCode}".` });
+      }
+      appliedPromoCode = cleanCode;
+      promoDiscount = promo.type === 'percentage'
+        ? Math.round(subtotal * (promo.value / 100) * 100) / 100
+        : Math.min(subtotal, promo.value);
+    }
+
+    // Check Customer & Loyalty Points
+    let pointsDiscount = 0;
+    let pointsEarned = 0;
+    let demoCustomer = null;
+    const ptsToRedeem = Math.max(0, parseInt(pointsRedeemed, 10) || 0);
+    if (customerId) {
+      demoCustomer = demoCustomers.find(c => c.id === customerId);
+      if (demoCustomer && ptsToRedeem > 0) {
+        if (demoCustomer.loyalty_points < ptsToRedeem) {
+          return res.status(400).json({ error: `Customer only has ${demoCustomer.loyalty_points} loyalty points available.` });
+        }
+        pointsDiscount = Math.min(Math.max(0, subtotal - promoDiscount), ptsToRedeem);
+      }
+    }
+
+    const manualDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
+    const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
+    const total = Math.round(Math.max(0, subtotal - totalDiscount) * 100) / 100;
+
+    if (demoCustomer) {
+      pointsEarned = Math.floor(total / 100);
+      demoCustomer.loyalty_points = demoCustomer.loyalty_points - pointsDiscount + pointsEarned;
+      demoCustomer.total_spent = Math.round((demoCustomer.total_spent + total) * 100) / 100;
+      demoCustomer.total_visits += 1;
+    }
 
     const paymentList = Array.isArray(payments) && payments.length > 0
       ? payments.map(p => ({ method: p.method || 'cash', amount: Number(p.amount), reference: p.reference || null }))
@@ -900,8 +1168,14 @@ app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), asy
       kitchen_status: 'pending',
       status: 'completed',
       subtotal,
-      discount: billDiscount,
+      discount: totalDiscount,
       total,
+      customer_id: demoCustomer ? demoCustomer.id : null,
+      customer_name: demoCustomer ? demoCustomer.name : null,
+      customer_phone: demoCustomer ? demoCustomer.phone : null,
+      points_earned: pointsEarned,
+      points_redeemed: pointsDiscount,
+      promotion_code: appliedPromoCode,
       payment_method: paymentList.length > 1 ? 'mixed' : paymentList[0].method,
       amount_received: Number(amountReceived) || total,
       payments: paymentList,
@@ -996,10 +1270,48 @@ app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), asy
       lines.push({ p, q, price, lineDiscount, total: lineTotal, notes });
     }
 
-    const billDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
-    const total = Math.round(Math.max(0, subtotal - billDiscount) * 100) / 100;
+    // Step 4: Check Promotion Code
+    let promoDiscount = 0;
+    let appliedPromoCode = null;
+    if (promotionCode) {
+      const cleanCode = String(promotionCode).trim().toUpperCase();
+      const pRows = (await client.query('SELECT * FROM promotions WHERE shop_id = $1 AND code = $2 AND active = true', [req.user.shop_id, cleanCode])).rows;
+      if (!pRows.length) {
+        throw new Error(`Promotional code "${promotionCode}" is invalid or expired.`);
+      }
+      const promo = pRows[0];
+      if (subtotal < Number(promo.min_order_amount)) {
+        throw new Error(`Order minimum of LKR ${promo.min_order_amount} required to use promo code "${promotionCode}".`);
+      }
+      appliedPromoCode = cleanCode;
+      promoDiscount = promo.type === 'percentage'
+        ? Math.round(subtotal * (Number(promo.value) / 100) * 100) / 100
+        : Math.min(subtotal, Number(promo.value));
+    }
 
-    // Step 4: Validate and prepare payments (Single, Mixed Tender, or Split Bill)
+    // Step 5: Check Customer & Loyalty Points
+    let pointsDiscount = 0;
+    let targetCustomer = null;
+    const ptsToRedeem = Math.max(0, parseInt(pointsRedeemed, 10) || 0);
+    if (customerId) {
+      const cRows = (await client.query('SELECT * FROM customers WHERE id = $1 AND shop_id = $2 FOR UPDATE', [customerId, req.user.shop_id])).rows;
+      if (cRows.length) {
+        targetCustomer = cRows[0];
+        if (ptsToRedeem > 0) {
+          if (targetCustomer.loyalty_points < ptsToRedeem) {
+            throw new Error(`Customer only has ${targetCustomer.loyalty_points} loyalty points available.`);
+          }
+          pointsDiscount = Math.min(Math.max(0, subtotal - promoDiscount), ptsToRedeem);
+        }
+      }
+    }
+
+    const manualDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
+    const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
+    const total = Math.round(Math.max(0, subtotal - totalDiscount) * 100) / 100;
+    const pointsEarned = targetCustomer ? Math.floor(total / 100) : 0;
+
+    // Step 6: Validate and prepare payments (Single, Mixed Tender, or Split Bill)
     let paymentList = [];
     if (Array.isArray(payments) && payments.length > 0) {
       let paidSum = 0;
@@ -1045,21 +1357,35 @@ app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), asy
 
     // Insert Sale record
     const sale = (await client.query(
-      'INSERT INTO sales(shop_id, user_id, shift_id, bill_number, order_type, table_number, subtotal, discount, total, payment_method, amount_received) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      `INSERT INTO sales(shop_id, user_id, shift_id, customer_id, bill_number, order_type, table_number,
+        subtotal, discount, total, points_earned, points_redeemed, promotion_code, payment_method, amount_received)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
       [
         req.user.shop_id,
         req.user.sub,
         activeShiftId,
+        targetCustomer ? targetCustomer.id : null,
         bill,
         orderType,
         orderType === 'dining' ? (tableNumber || 'Table 1') : null,
         subtotal,
-        billDiscount,
+        totalDiscount,
         total,
+        pointsEarned,
+        pointsDiscount,
+        appliedPromoCode,
         primaryPaymentMethod,
         Number(amountReceived) || totalCashAmount || total
       ]
     )).rows[0];
+
+    // Update customer loyalty points and lifetime spend
+    if (targetCustomer) {
+      await client.query(
+        'UPDATE customers SET loyalty_points = loyalty_points - $1 + $2, total_spent = total_spent + $3, total_visits = total_visits + 1 WHERE id = $4',
+        [pointsDiscount, pointsEarned, total, targetCustomer.id]
+      );
+    }
 
     // Insert individual payments breakdown (for multi-tender & split bills)
     const recordedPayments = [];
@@ -1094,6 +1420,20 @@ app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), asy
     const responsePayload = {
       sale,
       items: lines.map(l => ({
+        name: l.p.name,
+        code: l.p.code,
+        quantity: l.q,
+        price: l.price,
+        discount: l.lineDiscount,
+        notes: l.notes,
+        total: l.total
+      })),
+      payments: recordedPayments.map(p => ({
+        method: p.payment_method,
+        amount: Number(p.amount),
+        reference: p.reference
+      }))
+    };
         name: l.p.name,
         code: l.p.code,
         quantity: l.q,
@@ -1155,9 +1495,12 @@ app.get('/api/sales', auth, roles('admin', 'owner', 'manager', 'cashier', 'waite
       const rows = await query(
         `SELECT s.id, s.bill_number, s.order_type, s.table_number, s.kitchen_status, s.status,
                 s.subtotal, s.discount, s.total, s.payment_method, s.amount_received,
+                s.points_earned, s.points_redeemed, s.promotion_code,
                 s.voided_at, s.void_reason, s.created_at,
                 u.name AS cashier_name,
                 mgr.name AS void_authorized_by_name,
+                c.name AS customer_name,
+                c.phone AS customer_phone,
                 COALESCE(json_agg(json_build_object(
                   'id', si.id,
                   'name', si.product_name,
@@ -1171,9 +1514,10 @@ app.get('/api/sales', auth, roles('admin', 'owner', 'manager', 'cashier', 'waite
          FROM sales s
          LEFT JOIN users u ON u.id = s.user_id
          LEFT JOIN users mgr ON mgr.id = s.void_authorized_by
+         LEFT JOIN customers c ON c.id = s.customer_id
          LEFT JOIN sale_items si ON si.sale_id = s.id
          ${shopFilter}
-         GROUP BY s.id, u.name, mgr.name
+         GROUP BY s.id, u.name, mgr.name, c.name, c.phone
          ORDER BY s.created_at DESC
          LIMIT 100`,
         args,
@@ -1290,6 +1634,18 @@ app.post('/api/sales/:id/void', auth, roles('owner', 'manager', 'cashier', 'wait
           );
         }
 
+        // Reverse customer loyalty points and visits
+        if (sale.customer_id) {
+          await client.query(
+            `UPDATE customers 
+             SET loyalty_points = GREATEST(0, loyalty_points - $1 + $2), 
+                 total_spent = GREATEST(0, total_spent - $3), 
+                 total_visits = GREATEST(0, total_visits - 1) 
+             WHERE id = $4`,
+            [sale.points_earned || 0, sale.points_redeemed || 0, sale.total, sale.customer_id]
+          );
+        }
+
         await client.query(
           `INSERT INTO audit_logs(user_id, shop_id, action, details) 
            VALUES($1, $2, 'SALE_VOID', $3)`,
@@ -1349,6 +1705,15 @@ app.post('/api/sales/:id/void', auth, roles('owner', 'manager', 'cashier', 'wait
         if (prod) {
           prod.stock += (item.qty || item.quantity || 1);
         }
+      }
+    }
+
+    if (sale.customer_id) {
+      const c = demoCustomers.find(x => x.id === sale.customer_id);
+      if (c) {
+        c.loyalty_points = Math.max(0, c.loyalty_points - (sale.points_earned || 0) + (sale.points_redeemed || 0));
+        c.total_spent = Math.max(0, c.total_spent - sale.total);
+        c.total_visits = Math.max(0, c.total_visits - 1);
       }
     }
 

@@ -73,6 +73,11 @@ export default function ReceiptModal({ receipt, shopName, onClose }) {
               Order Type: {receipt.order_type.toUpperCase()}
               {receipt.table_number ? ` (${receipt.table_number})` : ''}
             </div>
+            {receipt.customer_name && (
+              <div className="receipt-line">
+                Customer: <strong>{receipt.customer_name}</strong> {receipt.customer_phone ? `(${receipt.customer_phone})` : ''}
+              </div>
+            )}
             <hr />
             {receipt.items.map((i, k) => (
               <div key={k} style={{ margin: '8px 0' }}>
@@ -100,6 +105,24 @@ export default function ReceiptModal({ receipt, shopName, onClose }) {
               <strong>TOTAL</strong>
               <strong>{money(receipt.total)}</strong>
             </div>
+            {receipt.promotion_code && (
+              <div className="receipt-item" style={{ fontSize: '10px', color: '#059669', margin: '2px 0' }}>
+                <span>Promo Code</span>
+                <span>{receipt.promotion_code}</span>
+              </div>
+            )}
+            {receipt.points_redeemed > 0 && (
+              <div className="receipt-item" style={{ fontSize: '10px', color: '#b45309', margin: '2px 0' }}>
+                <span>Points Redeemed</span>
+                <span>−{receipt.points_redeemed} pts</span>
+              </div>
+            )}
+            {receipt.points_earned > 0 && (
+              <div className="receipt-item" style={{ fontSize: '10px', color: '#16a34a', margin: '2px 0' }}>
+                <span>⭐ Points Earned</span>
+                <span>+{receipt.points_earned} pts</span>
+              </div>
+            )}
             <hr />
             <div style={{ fontSize: '10px', color: '#475569', marginBottom: '4px' }}>
               <strong>PAYMENTS & TENDER:</strong>

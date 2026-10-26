@@ -340,3 +340,84 @@ test('KDS Queue: voided orders are automatically removed from active kitchen dis
   assert.equal(activeKitchenOrders.length, 2);
   assert.equal(activeKitchenOrders.some(o => o.id === '2'), false);
 });
+
+test('Promotions Engine: validates percentage, fixed discounts, and minimum order rules', () => {
+  const promotions = [
+    { code: 'WELCOME10', type: 'percentage', value: 10, min_order_amount: 500 },
+    { code: 'CAFE500', type: 'fixed', value: 500, min_order_amount: 2500 }
+  ];
+
+  const applyPromo = (subtotal, code) => {
+    const promo = promotions.find(p => p.code === code);
+    if (!promo) throw new Error('Invalid code');
+    if (subtotal < promo.min_order_amount) {
+      throw new Error(`Minimum spend of ${promo.min_order_amount} required`);
+    }
+    return promo.type === 'percentage'
+      ? Math.round(subtotal * (promo.value / 100) * 100) / 100
+      : Math.min(subtotal, promo.value);
+  };
+
+  // Case 1: 10% on 1500 -> 150
+  assert.equal(applyPromo(1500, 'WELCOME10'), 150);
+
+  // Case 2: Fixed 500 on 3000 -> 500
+  assert.equal(applyPromo(3000, 'CAFE500'), 500);
+
+  // Case 3: Minimum order amount not met
+  assert.throws(() => applyPromo(2000, 'CAFE500'), /Minimum spend/);
+});
+
+test('Customer Loyalty Points: earns 1 pt per 100 LKR and handles instant redemption', () => {
+  const customer = {
+    name: 'Kasun',
+    loyalty_points: 200,
+    total_spent: 15000,
+    total_visits: 5
+  };
+
+  const subtotal = 3500;
+  const pointsToRedeem = 150; // 150 points = 150 LKR off
+
+  // Calculate bill
+  const pointsDiscount = Math.min(subtotal, pointsToRedeem);
+  const total = subtotal - pointsDiscount; // 3350
+  const pointsEarned = Math.floor(total / 100); // 33 pts
+
+  // Update customer
+  customer.loyalty_points = customer.loyalty_points - pointsDiscount + pointsEarned; // 200 - 150 + 33 = 83
+  customer.total_spent += total;
+  customer.total_visits += 1;
+
+  assert.equal(pointsDiscount, 150);
+  assert.equal(total, 3350);
+  assert.equal(pointsEarned, 33);
+  assert.equal(customer.loyalty_points, 83);
+  assert.equal(customer.total_spent, 18350);
+  assert.equal(customer.total_visits, 6);
+});
+
+test('Loyalty Invariant on Void: reverses points earned and refunds redeemed points', () => {
+  const customer = {
+    name: 'Kasun',
+    loyalty_points: 83,
+    total_spent: 18350,
+    total_visits: 6
+  };
+
+  const voidedSale = {
+    total: 3350,
+    points_earned: 33,
+    points_redeemed: 150
+  };
+
+  // Reverse transaction
+  customer.loyalty_points = Math.max(0, customer.loyalty_points - voidedSale.points_earned + voidedSale.points_redeemed);
+  customer.total_spent = Math.max(0, customer.total_spent - voidedSale.total);
+  customer.total_visits = Math.max(0, customer.total_visits - 1);
+
+  // Restores original balance: 83 - 33 + 150 = 200!
+  assert.equal(customer.loyalty_points, 200);
+  assert.equal(customer.total_spent, 15000);
+  assert.equal(customer.total_visits, 5);
+});
