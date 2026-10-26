@@ -5,11 +5,13 @@ import { query, pool } from '../db.js';
 import {
   demoProducts,
   demoSales,
+  demoShops,
   demoCustomers,
   demoPromotions,
   demoIdempotencyCache,
   broadcastKDS
 } from '../state.js';
+import { calculateBillTaxes } from '../utils/tax.js';
 import { auth, roles } from '../middleware/auth.js';
 
 const router = Router();
@@ -125,7 +127,16 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
 
     const manualDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
     const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
-    const total = Math.round(Math.max(0, subtotal - totalDiscount) * 100) / 100;
+
+    // Calculate dynamic taxes (Service Charge 10% on Dine-In, SSCL 2.5%, VAT 18%)
+    const demoShop = demoShops.find(s => s.id === req.user.shop_id) || demoShops[0] || {};
+    const taxBreakdown = calculateBillTaxes({
+      subtotal,
+      discount: totalDiscount,
+      orderType,
+      taxConfig: demoShop
+    });
+    const total = taxBreakdown.grandTotal;
 
     if (demoCustomer) {
       pointsEarned = Math.floor(total / 100);
@@ -149,6 +160,9 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
       status: 'completed',
       subtotal,
       discount: totalDiscount,
+      service_charge: taxBreakdown.serviceCharge,
+      sscl: taxBreakdown.sscl,
+      vat: taxBreakdown.vat,
       total,
       customer_id: demoCustomer ? demoCustomer.id : null,
       customer_name: demoCustomer ? demoCustomer.name : null,
@@ -294,7 +308,21 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
 
     const manualDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
     const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
-    const total = Math.round(Math.max(0, subtotal - totalDiscount) * 100) / 100;
+
+    // Fetch shop tax settings & calculate dynamic taxes (Service Charge 10% on Dine-In, SSCL 2.5%, VAT 18%)
+    const shopRow = (await client.query(
+      'SELECT service_charge_enabled, service_charge_rate, sscl_enabled, sscl_rate, vat_enabled, vat_rate FROM shops WHERE id = $1',
+      [req.user.shop_id]
+    )).rows;
+    const shopTaxConfig = shopRow.length ? shopRow[0] : {};
+
+    const taxBreakdown = calculateBillTaxes({
+      subtotal,
+      discount: totalDiscount,
+      orderType,
+      taxConfig: shopTaxConfig
+    });
+    const total = taxBreakdown.grandTotal;
     const pointsEarned = targetCustomer ? Math.floor(total / 100) : 0;
 
     // Step 6: Validate and prepare payments (Single, Mixed Tender, or Split Bill)
@@ -344,8 +372,8 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
     // Insert Sale record
     const sale = (await client.query(
       `INSERT INTO sales(shop_id, user_id, shift_id, customer_id, bill_number, order_type, table_number,
-        subtotal, discount, total, points_earned, points_redeemed, promotion_code, payment_method, amount_received)
-       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
+        subtotal, discount, service_charge, sscl, vat, total, points_earned, points_redeemed, promotion_code, payment_method, amount_received)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
       [
         req.user.shop_id,
         req.user.sub,
@@ -356,6 +384,9 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         orderType === 'dining' ? (tableNumber || 'Table 1') : null,
         subtotal,
         totalDiscount,
+        taxBreakdown.serviceCharge,
+        taxBreakdown.sscl,
+        taxBreakdown.vat,
         total,
         pointsEarned,
         pointsDiscount,
@@ -466,7 +497,8 @@ router.get('/', auth, roles('admin', 'owner', 'manager', 'cashier', 'waiter'), a
 
       const rows = await query(
         `SELECT s.id, s.bill_number, s.order_type, s.table_number, s.kitchen_status, s.status,
-                s.subtotal, s.discount, s.total, s.payment_method, s.amount_received,
+                s.subtotal, s.discount, s.service_charge, s.sscl, s.vat, s.total,
+                s.payment_method, s.amount_received,
                 s.points_earned, s.points_redeemed, s.promotion_code,
                 s.voided_at, s.void_reason, s.created_at,
                 u.name AS cashier_name,

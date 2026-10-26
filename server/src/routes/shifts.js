@@ -23,7 +23,7 @@ router.get('/current', auth, async (req, res) => {
       const shift = rows[0];
 
       const salesAgg = await query(
-        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1 AND status != 'voided'",
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts, COALESCE(SUM(service_charge), 0)::float AS service_charge, COALESCE(SUM(sscl), 0)::float AS sscl, COALESCE(SUM(vat), 0)::float AS vat FROM sales WHERE shift_id = $1 AND status != 'voided'",
         [shift.id],
         req.user
       );
@@ -190,7 +190,7 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, re
       const shift = active[0];
 
       const salesAgg = await query(
-        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1 AND status != 'voided'",
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts, COALESCE(SUM(service_charge), 0)::float AS service_charge, COALESCE(SUM(sscl), 0)::float AS sscl, COALESCE(SUM(vat), 0)::float AS vat FROM sales WHERE shift_id = $1 AND status != 'voided'",
         [shift.id],
         req.user
       );
@@ -214,6 +214,10 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, re
         req.user
       ))[0];
 
+      const scCollected = salesAgg[0]?.service_charge || 0;
+      const ssclCollected = salesAgg[0]?.sscl || 0;
+      const vatCollected = salesAgg[0]?.vat || 0;
+
       const zReport = {
         zReportNumber: 'Z-' + Date.now().toString().slice(-6),
         shiftId: shift.id,
@@ -223,6 +227,10 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, re
         openingFloat: Number(shift.opening_float),
         cashSales,
         discountsGiven: discounts,
+        serviceChargeCollected: scCollected,
+        ssclCollected: ssclCollected,
+        vatCollected: vatCollected,
+        totalTaxesCollected: Math.round((scCollected + ssclCollected + vatCollected) * 100) / 100,
         netAdjustments,
         expectedCash,
         actualCountedCash: counted,
@@ -241,6 +249,9 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, re
     const validCloseSales = demoSales.filter(s => s.status !== 'voided');
     const cashSales = validCloseSales.reduce((sum, s) => sum + s.total, 0);
     const discounts = validCloseSales.reduce((sum, s) => sum + s.discount, 0);
+    const scCollected = Math.round(validCloseSales.reduce((sum, s) => sum + (s.service_charge || 0), 0) * 100) / 100;
+    const ssclCollected = Math.round(validCloseSales.reduce((sum, s) => sum + (s.sscl || 0), 0) * 100) / 100;
+    const vatCollected = Math.round(validCloseSales.reduce((sum, s) => sum + (s.vat || 0), 0) * 100) / 100;
     const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
     const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
     const difference = Math.round((counted - expectedCash) * 100) / 100;
@@ -265,6 +276,10 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, re
       openingFloat: closedDemoShift.opening_float,
       cashSales,
       discountsGiven: discounts,
+      serviceChargeCollected: scCollected,
+      ssclCollected: ssclCollected,
+      vatCollected: vatCollected,
+      totalTaxesCollected: Math.round((scCollected + ssclCollected + vatCollected) * 100) / 100,
       netAdjustments,
       expectedCash,
       actualCountedCash: counted,

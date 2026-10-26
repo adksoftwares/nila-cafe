@@ -93,7 +93,14 @@ export default function SalesPage({ sales, onOpenVoidModal, user }) {
                       {isVoided ? (
                         <s style={{ color: '#94a3b8' }}>{money(s.total)}</s>
                       ) : (
-                        <strong>{money(s.total)}</strong>
+                        <div>
+                          <strong>{money(s.total)}</strong>
+                          {(s.service_charge > 0 || s.sscl > 0 || s.vat > 0) && (
+                            <div style={{ fontSize: '10px', color: '#64748b' }}>
+                              Incl. {money((Number(s.service_charge) || 0) + (Number(s.sscl) || 0) + (Number(s.vat) || 0))} tax/sc
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td style={{ textAlign: 'right' }}>

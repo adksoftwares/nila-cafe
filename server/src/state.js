@@ -17,6 +17,9 @@ export let demoSales = [
     status: 'completed',
     subtotal: 2350,
     discount: 100,
+    service_charge: 0,
+    sscl: 0,
+    vat: 0,
     total: 2250,
     payment_method: 'cash',
     amount_received: 2500,
@@ -37,6 +40,9 @@ export let demoSales = [
     status: 'completed',
     subtotal: 1500,
     discount: 0,
+    service_charge: 0,
+    sscl: 0,
+    vat: 0,
     total: 1500,
     payment_method: 'card',
     amount_received: 1500,
@@ -58,7 +64,20 @@ export const demoUsers = [
 ];
 
 export const demoShops = [
-  { id: 'shop-demo', name: 'The Daily Counter', email: 'owner@counterpoint.local', phone: '+94 77 123 4567', address: 'Colombo, Sri Lanka', active: true }
+  {
+    id: 'shop-demo',
+    name: 'The Daily Counter',
+    email: 'owner@counterpoint.local',
+    phone: '+94 77 123 4567',
+    address: 'Colombo, Sri Lanka',
+    active: true,
+    service_charge_enabled: true,
+    service_charge_rate: 10.0,
+    sscl_enabled: true,
+    sscl_rate: 2.5,
+    vat_enabled: true,
+    vat_rate: 18.0
+  }
 ];
 
 export const demoCustomers = [

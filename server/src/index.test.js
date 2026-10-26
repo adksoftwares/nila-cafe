@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { calculateBillTaxes } from './utils/tax.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -486,4 +487,109 @@ test('Offline Queue Auto-Sync: drains queue idempotently without duplicate charg
     assert.equal(res.duplicate, true); // Deduplicated!
   }
   assert.equal(serverStock, 95); // Stock never deducted twice!
+});
+
+test('Dynamic Tax Engine: Dine-In order applies 10% Service Charge, 2.5% SSCL, and 18% VAT', () => {
+  const subtotal = 2000;
+  const discount = 0;
+  const result = calculateBillTaxes({
+    subtotal,
+    discount,
+    orderType: 'dining',
+    taxConfig: {
+      service_charge_enabled: true,
+      service_charge_rate: 10,
+      sscl_enabled: true,
+      sscl_rate: 2.5,
+      vat_enabled: true,
+      vat_rate: 18
+    }
+  });
+
+  // 1. Service charge = 10% of 2000 = 200
+  assert.equal(result.serviceCharge, 200);
+
+  // 2. Taxable turnover = 2000 + 200 = 2200
+  // SSCL = 2.5% of 2200 = 55
+  assert.equal(result.sscl, 55);
+
+  // 3. VAT base = 2200 + 55 = 2255
+  // VAT = 18% of 2255 = 405.90
+  assert.equal(result.vat, 405.9);
+
+  // 4. Total taxes = 200 + 55 + 405.90 = 660.90
+  assert.equal(result.totalTaxes, 660.9);
+
+  // 5. Grand total = 2000 + 660.90 = 2660.90
+  assert.equal(result.grandTotal, 2660.9);
+});
+
+test('Dynamic Tax Engine: Takeaway and Delivery orders are exempt from Service Charge', () => {
+  const subtotal = 2000;
+  for (const orderType of ['takeaway', 'delivery']) {
+    const result = calculateBillTaxes({
+      subtotal,
+      discount: 0,
+      orderType,
+      taxConfig: {
+        service_charge_enabled: true,
+        service_charge_rate: 10,
+        sscl_enabled: true,
+        sscl_rate: 2.5,
+        vat_enabled: true,
+        vat_rate: 18
+      }
+    });
+
+    // Zero service charge for non-dining orders
+    assert.equal(result.serviceCharge, 0);
+
+    // SSCL = 2.5% of 2000 = 50
+    assert.equal(result.sscl, 50);
+
+    // VAT base = 2000 + 50 = 2050 -> 18% of 2050 = 369.00
+    assert.equal(result.vat, 369);
+
+    assert.equal(result.totalTaxes, 419);
+    assert.equal(result.grandTotal, 2419);
+  }
+});
+
+test('Dynamic Tax Engine: When taxes are disabled, total equals net subtotal without charges', () => {
+  const result = calculateBillTaxes({
+    subtotal: 1500,
+    discount: 200,
+    orderType: 'dining',
+    taxConfig: {
+      service_charge_enabled: false,
+      sscl_enabled: false,
+      vat_enabled: false
+    }
+  });
+
+  assert.equal(result.netSubtotal, 1300);
+  assert.equal(result.serviceCharge, 0);
+  assert.equal(result.sscl, 0);
+  assert.equal(result.vat, 0);
+  assert.equal(result.totalTaxes, 0);
+  assert.equal(result.grandTotal, 1300);
+});
+
+test('Z-Report Tax Aggregation: aggregates total service charges and government levies collected', () => {
+  const sales = [
+    { total: 2660.90, service_charge: 200, sscl: 55, vat: 405.90, status: 'completed' },
+    { total: 2419.00, service_charge: 0, sscl: 50, vat: 369.00, status: 'completed' },
+    { total: 1000.00, service_charge: 100, sscl: 25, vat: 180.00, status: 'voided' } // Excluded!
+  ];
+
+  const validSales = sales.filter(s => s.status !== 'voided');
+  const scCollected = Math.round(validSales.reduce((sum, s) => sum + s.service_charge, 0) * 100) / 100;
+  const ssclCollected = Math.round(validSales.reduce((sum, s) => sum + s.sscl, 0) * 100) / 100;
+  const vatCollected = Math.round(validSales.reduce((sum, s) => sum + s.vat, 0) * 100) / 100;
+  const totalTaxes = Math.round((scCollected + ssclCollected + vatCollected) * 100) / 100;
+
+  assert.equal(scCollected, 200);
+  assert.equal(ssclCollected, 105);
+  assert.equal(vatCollected, 774.90);
+  assert.equal(totalTaxes, 1079.90);
 });

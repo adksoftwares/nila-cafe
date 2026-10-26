@@ -59,6 +59,14 @@ export default function App() {
 
   const [customers, setCustomers] = useState([]);
   const [promotions, setPromotions] = useState([]);
+  const [taxConfig, setTaxConfig] = useState({
+    service_charge_enabled: true,
+    service_charge_rate: 10.0,
+    sscl_enabled: true,
+    sscl_rate: 2.5,
+    vat_enabled: true,
+    vat_rate: 18.0
+  });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [appliedPromotion, setAppliedPromotion] = useState(null);
@@ -224,6 +232,24 @@ export default function App() {
       .catch(() => {});
   };
 
+  const loadShopSettings = () => {
+    if (!token || !user || user.role === 'admin') return;
+    api('/shops/settings')
+      .then(d => {
+        if (d?.shop) {
+          setTaxConfig({
+            service_charge_enabled: d.shop.service_charge_enabled !== false,
+            service_charge_rate: Number(d.shop.service_charge_rate ?? 10.0),
+            sscl_enabled: d.shop.sscl_enabled !== false,
+            sscl_rate: Number(d.shop.sscl_rate ?? 2.5),
+            vat_enabled: d.shop.vat_enabled !== false,
+            vat_rate: Number(d.shop.vat_rate ?? 18.0)
+          });
+        }
+      })
+      .catch(() => {});
+  };
+
   // Load shop data / admin data / shift data
   useEffect(() => {
     if (!user) return;
@@ -244,6 +270,7 @@ export default function App() {
     loadSales();
     loadCustomers();
     loadPromotions();
+    loadShopSettings();
   }, [user, token]);
 
   const categories = useMemo(
@@ -350,6 +377,9 @@ export default function App() {
     const {
       subtotal,
       billDiscount,
+      serviceCharge = 0,
+      sscl = 0,
+      vat = 0,
       total,
       customerId,
       customerName,
@@ -370,6 +400,9 @@ export default function App() {
       table_number: orderType === 'dining' ? tableNumber : null,
       subtotal,
       discount: billDiscount,
+      service_charge: serviceCharge,
+      sscl: sscl,
+      vat: vat,
       total,
       customer_id: customerId || null,
       customer_name: customerName || null,
@@ -674,6 +707,7 @@ export default function App() {
               onOpenAddCustomer={() => setModal('customer')}
               onCheckout={handleCheckout}
               checkoutSubmitting={checkoutSubmitting}
+              taxConfig={taxConfig}
             />
           )}
 

@@ -7,8 +7,18 @@ export function money(n) {
 
 export function exportCSV(sales) {
   const rows = [
-    ['Bill number', 'Date', 'Order type', 'Subtotal', 'Discount', 'Total'],
-    ...sales.map(s => [s.bill_number, s.created_at, s.order_type, s.subtotal, s.discount, s.total])
+    ['Bill number', 'Date', 'Order type', 'Subtotal', 'Discount', 'Service Charge', 'SSCL', 'VAT', 'Total'],
+    ...sales.map(s => [
+      s.bill_number,
+      s.created_at,
+      s.order_type,
+      s.subtotal,
+      s.discount,
+      s.service_charge || 0,
+      s.sscl || 0,
+      s.vat || 0,
+      s.total
+    ])
   ];
   const blob = new Blob(
     [rows.map(r => r.map(v => '"' + String(v ?? '').replaceAll('"', '""') + '"').join(',')).join('\n')],

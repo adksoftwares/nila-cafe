@@ -16,6 +16,7 @@ import {
   Check
 } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
+import { calculateBillTaxes } from '../../utils/tax.js';
 
 export default function CartPanel({
   orderType,
@@ -40,7 +41,8 @@ export default function CartPanel({
   promotions = [],
   onOpenAddCustomer,
   onCheckout,
-  checkoutSubmitting = false
+  checkoutSubmitting = false,
+  taxConfig = {}
 }) {
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
   const [promoInput, setPromoInput] = useState('');
@@ -76,7 +78,15 @@ export default function CartPanel({
   );
 
   const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
-  const total = Math.round(Math.max(0, subtotal - totalDiscount) * 100) / 100;
+
+  // Calculate Sri Lankan Dynamic Taxes & Service Charges
+  const taxes = calculateBillTaxes({
+    subtotal,
+    discount: totalDiscount,
+    orderType,
+    taxConfig
+  });
+  const total = taxes.grandTotal;
   const totalItemCount = cart.reduce((s, i) => s + i.qty, 0);
   const pointsToEarn = selectedCustomer ? Math.floor(total / 100) : 0;
 
@@ -415,6 +425,27 @@ export default function CartPanel({
               </div>
             )}
 
+            {taxes.serviceCharge > 0 && (
+              <div style={{ fontSize: '12px', color: '#0369a1' }}>
+                <span>Dine-In Service Charge (10%)</span>
+                <strong>+{money(taxes.serviceCharge)}</strong>
+              </div>
+            )}
+
+            {taxes.sscl > 0 && (
+              <div style={{ fontSize: '12px', color: '#475569' }}>
+                <span>SSCL Levy (2.5%)</span>
+                <strong>+{money(taxes.sscl)}</strong>
+              </div>
+            )}
+
+            {taxes.vat > 0 && (
+              <div style={{ fontSize: '12px', color: '#475569' }}>
+                <span>VAT (18%)</span>
+                <strong>+{money(taxes.vat)}</strong>
+              </div>
+            )}
+
             <div className="grand-total">
               <div>
                 <span>Total Due</span>
@@ -435,6 +466,9 @@ export default function CartPanel({
             onClick={() => onCheckout({
               subtotal,
               billDiscount: totalDiscount,
+              serviceCharge: taxes.serviceCharge,
+              sscl: taxes.sscl,
+              vat: taxes.vat,
               total,
               customerId: selectedCustomer ? selectedCustomer.id : null,
               customerName: selectedCustomer ? selectedCustomer.name : null,

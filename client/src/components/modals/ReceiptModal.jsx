@@ -97,10 +97,30 @@ export default function ReceiptModal({ receipt, shopName, onClose }) {
               <span>Subtotal</span>
               <span>{money(receipt.subtotal)}</span>
             </div>
-            <div className="receipt-item">
-              <span>Discount</span>
-              <span>−{money(receipt.discount)}</span>
-            </div>
+            {receipt.discount > 0 && (
+              <div className="receipt-item">
+                <span>Discount</span>
+                <span>−{money(receipt.discount)}</span>
+              </div>
+            )}
+            {receipt.service_charge > 0 && (
+              <div className="receipt-item">
+                <span>Service Charge (10%)</span>
+                <span>+{money(receipt.service_charge)}</span>
+              </div>
+            )}
+            {receipt.sscl > 0 && (
+              <div className="receipt-item">
+                <span>SSCL (2.5%)</span>
+                <span>+{money(receipt.sscl)}</span>
+              </div>
+            )}
+            {receipt.vat > 0 && (
+              <div className="receipt-item">
+                <span>VAT (18%)</span>
+                <span>+{money(receipt.vat)}</span>
+              </div>
+            )}
             <div className="receipt-item receipt-total">
               <strong>TOTAL</strong>
               <strong>{money(receipt.total)}</strong>
