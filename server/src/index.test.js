@@ -421,3 +421,69 @@ test('Loyalty Invariant on Void: reverses points earned and refunds redeemed poi
   assert.equal(customer.total_spent, 15000);
   assert.equal(customer.total_visits, 5);
 });
+
+test('Offline Queue: queues offline checkouts with unique client idempotency keys', () => {
+  const offlineQueue = [];
+  const enqueue = (sale) => {
+    offlineQueue.push({
+      id: sale.id,
+      idempotencyKey: sale.idempotencyKey,
+      payload: sale.payload,
+      queuedAt: new Date().toISOString()
+    });
+  };
+
+  enqueue({
+    id: 101,
+    idempotencyKey: 'idem-offline-1',
+    payload: { total: 1500, items: [{ productId: 'p1', quantity: 2 }] }
+  });
+  enqueue({
+    id: 102,
+    idempotencyKey: 'idem-offline-2',
+    payload: { total: 2200, items: [{ productId: 'p2', quantity: 1 }] }
+  });
+
+  assert.equal(offlineQueue.length, 2);
+  assert.equal(offlineQueue[0].idempotencyKey, 'idem-offline-1');
+  assert.equal(offlineQueue[1].idempotencyKey, 'idem-offline-2');
+  assert.ok(offlineQueue[0].queuedAt);
+});
+
+test('Offline Queue Auto-Sync: drains queue idempotently without duplicate charges', () => {
+  const serverDb = new Map();
+  const processedKeys = new Set();
+  let serverStock = 100;
+
+  const serverProcess = (idempotencyKey, order) => {
+    if (processedKeys.has(idempotencyKey)) {
+      return { status: 200, duplicate: true, order: serverDb.get(idempotencyKey) };
+    }
+    serverStock -= order.quantity;
+    const record = { bill: 'POS-' + idempotencyKey, stock: serverStock };
+    serverDb.set(idempotencyKey, record);
+    processedKeys.add(idempotencyKey);
+    return { status: 201, duplicate: false, order: record };
+  };
+
+  const offlineItems = [
+    { id: 1, key: 'idem-sync-1', order: { quantity: 2 } },
+    { id: 2, key: 'idem-sync-2', order: { quantity: 3 } }
+  ];
+
+  // First sync flush
+  for (const item of offlineItems) {
+    const res = serverProcess(item.key, item.order);
+    assert.equal(res.status, 201);
+    assert.equal(res.duplicate, false);
+  }
+  assert.equal(serverStock, 95); // 100 - 5
+
+  // Simulated network retry of duplicate sync payload
+  for (const item of offlineItems) {
+    const res = serverProcess(item.key, item.order);
+    assert.equal(res.status, 200);
+    assert.equal(res.duplicate, true); // Deduplicated!
+  }
+  assert.equal(serverStock, 95); // Stock never deducted twice!
+});

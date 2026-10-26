@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import './style.css';
 import { initialProducts, demoUser, API } from './utils/constants.js';
 import { request } from './api.js';
+import { queueOfflineSale, getOfflineQueue, removeOfflineSale } from './utils/offlineQueue.js';
 
 // Components
 import Sidebar from './components/Sidebar.jsx';
@@ -62,6 +63,10 @@ export default function App() {
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
   const [appliedPromotion, setAppliedPromotion] = useState(null);
 
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
@@ -93,6 +98,78 @@ export default function App() {
       .then(d => setApiMode(d.database === 'connected' ? 'connected' : d.mode || 'demo'))
       .catch(() => setApiMode('offline'));
   }, []);
+
+  // Monitor network connectivity & auto-sync offline queue
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      flash('Connection restored. Syncing offline orders...');
+      syncOfflineQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      flash('Network offline. POS operating in local offline mode.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    getOfflineQueue().then(q => setOfflineQueueCount(q.length));
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [token]);
+
+  // Sync pending offline orders with idempotent protection
+  const syncOfflineQueue = async () => {
+    if (!token || isSyncing) return;
+    try {
+      setIsSyncing(true);
+      const queue = await getOfflineQueue();
+      if (!queue.length) {
+        setOfflineQueueCount(0);
+        return;
+      }
+
+      let syncedCount = 0;
+      for (const item of queue) {
+        try {
+          await api('/sales', {
+            method: 'POST',
+            headers: {
+              'Idempotency-Key': item.idempotencyKey
+            },
+            body: JSON.stringify(item.payload)
+          });
+          await removeOfflineSale(item.id);
+          syncedCount++;
+        } catch (err) {
+          console.warn('Sync attempt for order', item.id, err.message);
+          // If already saved or conflict, safe to clean
+          if (err.message.includes('already exists') || err.message.includes('Idempotency')) {
+            await removeOfflineSale(item.id);
+          }
+        }
+      }
+
+      const remaining = await getOfflineQueue();
+      setOfflineQueueCount(remaining.length);
+
+      if (syncedCount > 0) {
+        flash(`Synced ${syncedCount} offline order(s) successfully.`);
+        loadSales();
+        loadShift();
+        loadCustomers();
+      }
+    } catch (err) {
+      console.warn('Offline sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Verify session
   useEffect(() => {
@@ -317,30 +394,36 @@ export default function App() {
       })
     };
 
+    const checkoutPayload = {
+      orderType,
+      tableNumber: orderType === 'dining' ? tableNumber : null,
+      items: cart.map(i => ({
+        productId: i.product.id,
+        quantity: i.qty,
+        notes: i.notes || '',
+        discount: 0
+      })),
+      discount: billDiscount,
+      customerId,
+      pointsRedeemed,
+      promotionCode,
+      payments,
+      paymentMethod: primaryMethod,
+      amountReceived
+    };
+
     try {
+      if (!isOnline) {
+        throw new Error('Offline');
+      }
+
       if (token && apiMode === 'connected') {
         const data = await api('/sales', {
           method: 'POST',
           headers: {
             'Idempotency-Key': idempotencyKey
           },
-          body: JSON.stringify({
-            orderType,
-            tableNumber: orderType === 'dining' ? tableNumber : null,
-            items: cart.map(i => ({
-              productId: i.product.id,
-              quantity: i.qty,
-              notes: i.notes || '',
-              discount: 0
-            })),
-            discount: billDiscount,
-            customerId,
-            pointsRedeemed,
-            promotionCode,
-            payments,
-            paymentMethod: primaryMethod,
-            amountReceived
-          })
+          body: JSON.stringify(checkoutPayload)
         });
         sale.bill_number = data.sale.bill_number;
         sale.total = Number(data.sale.total);
@@ -349,32 +432,43 @@ export default function App() {
         if (data.sale.points_redeemed) sale.points_redeemed = data.sale.points_redeemed;
         if (data.sale.promotion_code) sale.promotion_code = data.sale.promotion_code;
         if (data.payments) sale.payments = data.payments;
-      } else if (apiMode !== 'demo') {
-        flash('API is offline: this checkout is saved to local workstation only.');
       }
-
-      setSales(old => {
-        const updated = [sale, ...old];
-        localStorage.setItem('pos_sales', JSON.stringify(updated));
-        return updated;
-      });
-
-      setModal('receipt');
-      setLastReceipt(sale);
-      setCart([]);
-      setDiscount(0);
-      setSelectedCustomer(null);
-      setPointsToRedeem(0);
-      setAppliedPromotion(null);
-      setPendingCheckout(null);
-      loadShift();
-      loadSales();
-      loadCustomers();
     } catch (e) {
-      flash(e.message);
-    } finally {
-      setCheckoutSubmitting(false);
+      if (!isOnline || e.message === 'Offline' || e.message.includes('fetch') || e.message.includes('Failed to fetch')) {
+        await queueOfflineSale({
+          id: sale.id,
+          idempotencyKey,
+          payload: checkoutPayload,
+          saleRecord: sale
+        });
+        const q = await getOfflineQueue();
+        setOfflineQueueCount(q.length);
+        flash('Network offline: Order saved to local device queue. Auto-syncing when back online.');
+      } else {
+        flash(e.message);
+        setCheckoutSubmitting(false);
+        return;
+      }
     }
+
+    setSales(old => {
+      const updated = [sale, ...old];
+      localStorage.setItem('pos_sales', JSON.stringify(updated));
+      return updated;
+    });
+
+    setModal('receipt');
+    setLastReceipt(sale);
+    setCart([]);
+    setDiscount(0);
+    setSelectedCustomer(null);
+    setPointsToRedeem(0);
+    setAppliedPromotion(null);
+    setPendingCheckout(null);
+    loadShift();
+    loadSales();
+    loadCustomers();
+    setCheckoutSubmitting(false);
   };
 
   const handleCreateCustomer = async (custForm) => {
@@ -539,6 +633,10 @@ export default function App() {
           shift={shift}
           shiftSummary={shiftSummary}
           onOpenShiftModal={() => setModal('shift')}
+          isOnline={isOnline}
+          offlineQueueCount={offlineQueueCount}
+          isSyncing={isSyncing}
+          onTriggerSync={syncOfflineQueue}
           onFlash={flash}
         />
 
