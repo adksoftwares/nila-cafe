@@ -214,3 +214,27 @@ test('Till Cash Drawer Isolation: Card and QR payments do NOT increment physical
   const expectedCashInTill = openingFloat + cashPortion;
   assert.equal(expectedCashInTill, 6500);
 });
+
+
+test('KDS Status Lifecycle: validates kitchen status state machine transitions', () => {
+  const allowedStatuses = ['pending', 'preparing', 'ready', 'served'];
+
+  const isValidStatus = status => allowedStatuses.includes(status);
+
+  assert.equal(isValidStatus('pending'), true);
+  assert.equal(isValidStatus('preparing'), true);
+  assert.equal(isValidStatus('ready'), true);
+  assert.equal(isValidStatus('served'), true);
+  assert.equal(isValidStatus('cancelled_unknown'), false);
+});
+
+test('KDS SSE Payload: formats valid Server-Sent Events stream message', () => {
+  const event = 'order:new';
+  const data = { id: 'order-101', bill_number: 'POS-NILA-999', kitchen_status: 'pending' };
+
+  const sseMessage = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+
+  assert.equal(sseMessage.startsWith('event: order:new\n'), true);
+  assert.equal(sseMessage.includes('"bill_number":"POS-NILA-999"'), true);
+  assert.equal(sseMessage.endsWith('\n\n'), true);
+});

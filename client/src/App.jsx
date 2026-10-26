@@ -18,6 +18,7 @@ import PaymentModal from './components/modals/PaymentModal.jsx';
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
 import POSPage from './pages/POSPage.jsx';
+import KDSPage from './pages/KDSPage.jsx';
 import ProductsPage from './pages/ProductsPage.jsx';
 import SalesPage from './pages/SalesPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
@@ -453,6 +454,13 @@ export default function App() {
               setDiscountMode={setDiscountMode}
               onCheckout={handleCheckout}
               checkoutSubmitting={checkoutSubmitting}
+            />
+          )}
+
+          {page === 'Kitchen (KDS)' && (
+            <KDSPage
+              token={token}
+              onFlash={flash}
             />
           )}
 

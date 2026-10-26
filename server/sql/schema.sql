@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS sales (
   bill_number TEXT NOT NULL,
   order_type TEXT NOT NULL CHECK(order_type IN ('takeaway','delivery','dining')),
   table_number TEXT,
+  kitchen_status TEXT NOT NULL DEFAULT 'pending' CHECK(kitchen_status IN ('pending', 'preparing', 'ready', 'served')),
   subtotal NUMERIC(12,2) NOT NULL,
   discount NUMERIC(12,2) NOT NULL DEFAULT 0,
   total NUMERIC(12,2) NOT NULL,
