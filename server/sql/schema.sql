@@ -36,10 +36,36 @@ CREATE TABLE IF NOT EXISTS products (
   UNIQUE(shop_id, code)
 );
 
+CREATE TABLE IF NOT EXISTS shifts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id),
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  closed_at TIMESTAMPTZ,
+  opening_float NUMERIC(12,2) NOT NULL DEFAULT 0,
+  expected_cash NUMERIC(12,2) NOT NULL DEFAULT 0,
+  actual_cash NUMERIC(12,2),
+  difference NUMERIC(12,2),
+  status TEXT NOT NULL CHECK(status IN ('open', 'closed')) DEFAULT 'open',
+  notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS shift_cash_adjustments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shift_id UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id),
+  type TEXT NOT NULL CHECK(type IN ('cash_in', 'cash_out')),
+  amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS sales (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID NOT NULL REFERENCES shops(id),
   user_id UUID NOT NULL REFERENCES users(id),
+  shift_id UUID REFERENCES shifts(id) ON DELETE SET NULL,
   bill_number TEXT NOT NULL,
   order_type TEXT NOT NULL CHECK(order_type IN ('takeaway','delivery','dining')),
   table_number TEXT,
@@ -183,6 +209,35 @@ CREATE POLICY idempotency_keys_tenant_isolation ON idempotency_keys
 -- Stock Movements Policy
 DROP POLICY IF EXISTS stock_movements_tenant_isolation ON stock_movements;
 CREATE POLICY stock_movements_tenant_isolation ON stock_movements
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+
+ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shifts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS shifts_tenant_isolation ON shifts;
+CREATE POLICY shifts_tenant_isolation ON shifts
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+ALTER TABLE shift_cash_adjustments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shift_cash_adjustments FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS shift_adjustments_tenant_isolation ON shift_cash_adjustments;
+CREATE POLICY shift_adjustments_tenant_isolation ON shift_cash_adjustments
   FOR ALL
   USING (
     current_setting('app.is_admin', true) = 'true'

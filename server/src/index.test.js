@@ -131,3 +131,43 @@ test('Row-Level Security (RLS) session parameter resolution enforces tenant isol
   assert.equal(ctxAdmin.param, 'app.is_admin');
   assert.equal(ctxAdmin.value, 'true');
 });
+
+
+test('Shift Till Reconciliation: calculates accurate expected drawer cash with adjustments', () => {
+  const openingFloat = 5000;
+  const cashSales = [1200, 850, 450, 2300]; // total: 4800
+  const adjustments = [
+    { type: 'cash_out', amount: 500, reason: 'Emergency Milk' },
+    { type: 'cash_in', amount: 1000, reason: 'Small coins change add' },
+    { type: 'cash_out', amount: 200, reason: 'Ice bags' }
+  ];
+
+  const totalSales = cashSales.reduce((a, b) => a + b, 0);
+  const netAdjustments = adjustments.reduce(
+    (sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount),
+    0
+  ); // +300
+
+  const expectedCash = openingFloat + totalSales + netAdjustments;
+  assert.equal(totalSales, 4800);
+  assert.equal(netAdjustments, 300);
+  assert.equal(expectedCash, 10100);
+});
+
+test('Shift End (Z-Report): calculates exact cash variance (Over / Short)', () => {
+  const expectedCash = 10100;
+
+  // Scenario 1: Exact balanced till
+  const balancedCount = 10100;
+  assert.equal(balancedCount - expectedCash, 0);
+
+  // Scenario 2: Cash Shortage (e.g. cashier handed out too much change)
+  const shortCount = 10000;
+  const shortage = shortCount - expectedCash;
+  assert.equal(shortage, -100);
+
+  // Scenario 3: Cash Overage
+  const overCount = 10150;
+  const overage = overCount - expectedCash;
+  assert.equal(overage, 50);
+});

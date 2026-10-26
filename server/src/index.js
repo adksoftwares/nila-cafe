@@ -67,6 +67,20 @@ let demoShops = [
   { id: 'shop-demo', name: 'The Daily Counter', email: 'owner@counterpoint.local', phone: '+94 77 123 4567', address: 'Colombo, Sri Lanka', active: true }
 ];
 const demoIdempotencyCache = new Map();
+let demoShift = {
+  id: 'shift-demo-1',
+  shop_id: 'shop-demo',
+  user_id: 'u-owner',
+  opened_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+  closed_at: null,
+  opening_float: 5000,
+  expected_cash: 5000,
+  actual_cash: null,
+  difference: null,
+  status: 'open',
+  notes: 'Morning shift opening float'
+};
+let demoShiftAdjustments = [];
 const demoMode = !pool;
 
 const safeUser = u => ({
@@ -358,6 +372,273 @@ app.post('/api/admin/shops', auth, roles('admin'), async (req, res) => {
   }
 });
 
+// ------------------- SHIFT & TILL MANAGEMENT ------------------- //
+
+// Shifts: Get Current Shift Status
+app.get('/api/shifts/current', auth, async (req, res) => {
+  try {
+    if (pool) {
+      const rows = await query(
+        "SELECT * FROM shifts WHERE shop_id = $1 AND status = 'open' ORDER BY opened_at DESC LIMIT 1",
+        [req.user.shop_id],
+        req.user
+      );
+      if (!rows.length) return res.json({ shift: null, summary: null });
+      const shift = rows[0];
+
+      const salesAgg = await query(
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1",
+        [shift.id],
+        req.user
+      );
+
+      const adjAgg = await query(
+        "SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0)::float AS net_adjustments FROM shift_cash_adjustments WHERE shift_id = $1",
+        [shift.id],
+        req.user
+      );
+
+      const cashSales = salesAgg[0]?.cash_sales || 0;
+      const bills = salesAgg[0]?.bills || 0;
+      const discounts = salesAgg[0]?.discounts || 0;
+      const netAdjustments = adjAgg[0]?.net_adjustments || 0;
+      const expectedCash = Math.round((Number(shift.opening_float) + cashSales + netAdjustments) * 100) / 100;
+
+      return res.json({
+        shift,
+        summary: {
+          bills,
+          cashSales,
+          discounts,
+          netAdjustments,
+          expectedCash,
+          openingFloat: Number(shift.opening_float)
+        }
+      });
+    }
+
+    // Demo Mode Shift Status
+    if (!demoShift || demoShift.status !== 'open') {
+      return res.json({ shift: null, summary: null });
+    }
+    const cashSales = demoSales.reduce((sum, s) => sum + s.total, 0);
+    const discounts = demoSales.reduce((sum, s) => sum + s.discount, 0);
+    const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
+    const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
+
+    res.json({
+      shift: demoShift,
+      summary: {
+        bills: demoSales.length,
+        cashSales,
+        discounts,
+        netAdjustments,
+        expectedCash,
+        openingFloat: demoShift.opening_float
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Shifts: Open Shift (Entering Opening Float)
+app.post('/api/shifts/open', auth, roles('owner'), async (req, res) => {
+  const { openingFloat = 0, notes = '' } = req.body;
+  const floatVal = Math.max(0, Number(openingFloat) || 0);
+
+  try {
+    if (pool) {
+      const active = await query(
+        "SELECT id FROM shifts WHERE shop_id = $1 AND status = 'open' LIMIT 1",
+        [req.user.shop_id],
+        req.user
+      );
+      if (active.length > 0) {
+        return res.status(400).json({ error: 'A shift is already open. Close it before opening a new one.' });
+      }
+
+      const rows = await query(
+        "INSERT INTO shifts(shop_id, user_id, opening_float, expected_cash, status, notes) VALUES($1, $2, $3, $4, 'open', $5) RETURNING *",
+        [req.user.shop_id, req.user.sub, floatVal, floatVal, String(notes || '').trim()],
+        req.user
+      );
+      return res.status(201).json({ shift: rows[0] });
+    }
+
+    if (demoShift && demoShift.status === 'open') {
+      return res.status(400).json({ error: 'A shift is already open.' });
+    }
+
+    demoShift = {
+      id: 'shift-demo-' + Date.now(),
+      shop_id: req.user.shop_id,
+      user_id: req.user.sub,
+      opened_at: new Date().toISOString(),
+      closed_at: null,
+      opening_float: floatVal,
+      expected_cash: floatVal,
+      actual_cash: null,
+      difference: null,
+      status: 'open',
+      notes: String(notes || '').trim()
+    };
+    demoShiftAdjustments = [];
+    res.status(201).json({ shift: demoShift });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Shifts: Petty Cash In / Out (Adjustments)
+app.post('/api/shifts/adjustment', auth, roles('owner'), async (req, res) => {
+  const { type, amount, reason } = req.body;
+  if (!['cash_in', 'cash_out'].includes(type) || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !reason) {
+    return res.status(400).json({ error: 'Provide valid adjustment type, positive amount, and reason.' });
+  }
+
+  try {
+    if (pool) {
+      const active = await query(
+        "SELECT id FROM shifts WHERE shop_id = $1 AND status = 'open' LIMIT 1",
+        [req.user.shop_id],
+        req.user
+      );
+      if (!active.length) {
+        return res.status(400).json({ error: 'No active shift found. Open a shift first.' });
+      }
+
+      const rows = await query(
+        "INSERT INTO shift_cash_adjustments(shift_id, shop_id, user_id, type, amount, reason) VALUES($1, $2, $3, $4, $5, $6) RETURNING *",
+        [active[0].id, req.user.shop_id, req.user.sub, type, Number(amount), reason.trim()],
+        req.user
+      );
+      return res.status(201).json({ adjustment: rows[0] });
+    }
+
+    if (!demoShift || demoShift.status !== 'open') {
+      return res.status(400).json({ error: 'No active shift in demo mode.' });
+    }
+
+    const adj = {
+      id: 'adj-' + Date.now(),
+      shift_id: demoShift.id,
+      type,
+      amount: Number(amount),
+      reason: reason.trim(),
+      created_at: new Date().toISOString()
+    };
+    demoShiftAdjustments.push(adj);
+    res.status(201).json({ adjustment: adj });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Shifts: Close Shift & Generate Official Z-Report
+app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
+  const { actualCash = 0, notes = '' } = req.body;
+  const counted = Math.max(0, Number(actualCash) || 0);
+
+  try {
+    if (pool) {
+      const active = await query(
+        "SELECT * FROM shifts WHERE shop_id = $1 AND status = 'open' LIMIT 1",
+        [req.user.shop_id],
+        req.user
+      );
+      if (!active.length) {
+        return res.status(400).json({ error: 'No open shift to close.' });
+      }
+      const shift = active[0];
+
+      const salesAgg = await query(
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1",
+        [shift.id],
+        req.user
+      );
+
+      const adjAgg = await query(
+        "SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0)::float AS net_adjustments FROM shift_cash_adjustments WHERE shift_id = $1",
+        [shift.id],
+        req.user
+      );
+
+      const cashSales = salesAgg[0]?.cash_sales || 0;
+      const bills = salesAgg[0]?.bills || 0;
+      const discounts = salesAgg[0]?.discounts || 0;
+      const netAdjustments = adjAgg[0]?.net_adjustments || 0;
+      const expectedCash = Math.round((Number(shift.opening_float) + cashSales + netAdjustments) * 100) / 100;
+      const difference = Math.round((counted - expectedCash) * 100) / 100;
+
+      const updated = (await query(
+        "UPDATE shifts SET closed_at = NOW(), actual_cash = $1, expected_cash = $2, difference = $3, status = 'closed', notes = $4 WHERE id = $5 RETURNING *",
+        [counted, expectedCash, difference, String(notes || '').trim(), shift.id],
+        req.user
+      ))[0];
+
+      const zReport = {
+        zReportNumber: 'Z-' + Date.now().toString().slice(-6),
+        shiftId: shift.id,
+        openedAt: shift.opened_at,
+        closedAt: updated.closed_at,
+        cashier: req.user.name,
+        openingFloat: Number(shift.opening_float),
+        cashSales,
+        discountsGiven: discounts,
+        netAdjustments,
+        expectedCash,
+        actualCountedCash: counted,
+        variance: difference,
+        billsCount: bills
+      };
+
+      return res.json({ shift: updated, zReport });
+    }
+
+    // Demo Mode Z-Report
+    if (!demoShift || demoShift.status !== 'open') {
+      return res.status(400).json({ error: 'No open shift to close.' });
+    }
+
+    const cashSales = demoSales.reduce((sum, s) => sum + s.total, 0);
+    const discounts = demoSales.reduce((sum, s) => sum + s.discount, 0);
+    const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
+    const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
+    const difference = Math.round((counted - expectedCash) * 100) / 100;
+
+    demoShift = {
+      ...demoShift,
+      closed_at: new Date().toISOString(),
+      actual_cash: counted,
+      expected_cash: expectedCash,
+      difference,
+      status: 'closed',
+      notes: String(notes || '').trim()
+    };
+
+    const zReport = {
+      zReportNumber: 'Z-' + Date.now().toString().slice(-6),
+      shiftId: demoShift.id,
+      openedAt: demoShift.opened_at,
+      closedAt: demoShift.closed_at,
+      cashier: req.user.name || 'Demo Cashier',
+      openingFloat: demoShift.opening_float,
+      cashSales,
+      discountsGiven: discounts,
+      netAdjustments,
+      expectedCash,
+      actualCountedCash: counted,
+      variance: difference,
+      billsCount: demoSales.length
+    };
+
+    res.json({ shift: demoShift, zReport });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Sales: Checkout & Inventory Management (Deadlock-Free Batch Query & Idempotent)
 app.post('/api/sales', auth, roles('owner'), async (req, res) => {
   const {
@@ -461,12 +742,21 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
     // Generate Bill Number
     const bill = 'POS-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
 
+    // Query active shift if any
+    let activeShiftId = null;
+    const shiftRow = (await client.query(
+      "SELECT id FROM shifts WHERE shop_id = $1 AND status = 'open' LIMIT 1",
+      [req.user.shop_id]
+    )).rows;
+    if (shiftRow.length) activeShiftId = shiftRow[0].id;
+
     // Insert Sale record
     const sale = (await client.query(
-      'INSERT INTO sales(shop_id, user_id, bill_number, order_type, table_number, subtotal, discount, total, payment_method, amount_received) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      'INSERT INTO sales(shop_id, user_id, shift_id, bill_number, order_type, table_number, subtotal, discount, total, payment_method, amount_received) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
       [
         req.user.shop_id,
         req.user.sub,
+        activeShiftId,
         bill,
         orderType,
         orderType === 'dining' ? (tableNumber || 'Table 1') : null,

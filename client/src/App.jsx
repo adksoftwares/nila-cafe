@@ -12,6 +12,7 @@ import Toast from './components/Toast.jsx';
 import ReceiptModal from './components/modals/ReceiptModal.jsx';
 import ProductModal from './components/modals/ProductModal.jsx';
 import ShopModal from './components/modals/ShopModal.jsx';
+import ShiftModal from './components/modals/ShiftModal.jsx';
 
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
@@ -62,6 +63,9 @@ export default function App() {
   const [adminShops, setAdminShops] = useState([]);
   const [apiMode, setApiMode] = useState('demo');
 
+  const [shift, setShift] = useState(null);
+  const [shiftSummary, setShiftSummary] = useState(null);
+
   const flash = (msg) => {
     setNotice(msg);
     setTimeout(() => setNotice(''), 3200);
@@ -90,7 +94,17 @@ export default function App() {
       });
   }, [token]);
 
-  // Load shop data / admin data
+  const loadShift = () => {
+    if (!token || !user || user.role === 'admin') return;
+    api('/shifts/current')
+      .then(d => {
+        setShift(d.shift);
+        setShiftSummary(d.summary);
+      })
+      .catch(() => {});
+  };
+
+  // Load shop data / admin data / shift data
   useEffect(() => {
     if (!user) return;
     if (user.role === 'admin') {
@@ -105,7 +119,9 @@ export default function App() {
         if (d.products?.length) setProducts(d.products);
       })
       .catch(() => {});
-  }, [user]);
+
+    loadShift();
+  }, [user, token]);
 
   const categories = useMemo(
     () => ['All items', ...new Set(products.map(p => p.category || 'General'))],
@@ -260,6 +276,7 @@ export default function App() {
       setLastReceipt(sale);
       setCart([]);
       setDiscount(0);
+      loadShift();
     } catch (e) {
       flash(e.message);
     } finally {
@@ -314,6 +331,48 @@ export default function App() {
     }
   };
 
+  const handleOpenShift = async ({ openingFloat, notes }) => {
+    try {
+      const res = await api('/shifts/open', {
+        method: 'POST',
+        body: JSON.stringify({ openingFloat, notes })
+      });
+      setShift(res.shift);
+      loadShift();
+      flash('Till shift opened successfully.');
+      setModal('');
+    } catch (e) {
+      flash(e.message);
+    }
+  };
+
+  const handleAddAdjustment = async ({ type, amount, reason }) => {
+    try {
+      await api('/shifts/adjustment', {
+        method: 'POST',
+        body: JSON.stringify({ type, amount, reason })
+      });
+      loadShift();
+      flash(`Recorded ${type === 'cash_in' ? 'Cash In (Float Add)' : 'Payout (Petty Cash)'}.`);
+    } catch (e) {
+      flash(e.message);
+    }
+  };
+
+  const handleCloseShift = async ({ actualCash, notes }) => {
+    try {
+      const res = await api('/shifts/close', {
+        method: 'POST',
+        body: JSON.stringify({ actualCash, notes })
+      });
+      setShift(res.shift);
+      flash('Shift closed. Official Z-Report generated.');
+      return res;
+    } catch (e) {
+      flash(e.message);
+    }
+  };
+
   if (!user) {
     return (
       <>
@@ -347,6 +406,9 @@ export default function App() {
           user={user}
           page={page}
           apiMode={apiMode}
+          shift={shift}
+          shiftSummary={shiftSummary}
+          onOpenShiftModal={() => setModal('shift')}
           onFlash={flash}
         />
 
@@ -438,6 +500,17 @@ export default function App() {
         <ShopModal
           onSave={handleCreateShop}
           onClose={() => setModal('')}
+        />
+      )}
+
+      {modal === 'shift' && (
+        <ShiftModal
+          shift={shift}
+          shiftSummary={shiftSummary}
+          onOpenShift={handleOpenShift}
+          onCloseShift={handleCloseShift}
+          onAddAdjustment={handleAddAdjustment}
+          onCloseModal={() => setModal('')}
         />
       )}
 
