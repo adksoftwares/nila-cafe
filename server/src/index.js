@@ -639,13 +639,14 @@ app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
   }
 });
 
-// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query & Idempotent)
+// Sales: Checkout & Inventory Management (Deadlock-Free Batch Query, Idempotent, Multi-Payment & Split Bill)
 app.post('/api/sales', auth, roles('owner'), async (req, res) => {
   const {
     orderType,
     tableNumber = null,
     items = [],
     discount = 0,
+    payments = null, // Array of { method: 'cash'|'card'|'qr', amount, reference }
     paymentMethod = 'cash',
     amountReceived = 0
   } = req.body;
@@ -739,6 +740,39 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
     const billDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
     const total = Math.round(Math.max(0, subtotal - billDiscount) * 100) / 100;
 
+    // Step 4: Validate and prepare payments (Single, Mixed Tender, or Split Bill)
+    let paymentList = [];
+    if (Array.isArray(payments) && payments.length > 0) {
+      let paidSum = 0;
+      for (const pay of payments) {
+        const amt = Math.round(Number(pay.amount) * 100) / 100;
+        const method = String(pay.method || 'cash').toLowerCase();
+        if (!['cash', 'card', 'qr'].includes(method) || amt <= 0) {
+          throw new Error('Invalid payment method or amount.');
+        }
+        paidSum = Math.round((paidSum + amt) * 100) / 100;
+        paymentList.push({
+          method,
+          amount: amt,
+          reference: pay.reference ? String(pay.reference).trim() : null
+        });
+      }
+      if (paidSum < total - 0.05) {
+        throw new Error(`Total payments (LKR ${paidSum}) do not cover the bill total (LKR ${total}).`);
+      }
+    } else {
+      paymentList.push({
+        method: ['cash', 'card', 'qr'].includes(paymentMethod) ? paymentMethod : 'cash',
+        amount: total,
+        reference: null
+      });
+    }
+
+    const primaryPaymentMethod = paymentList.length === 1 ? paymentList[0].method : 'mixed';
+    const totalCashAmount = paymentList
+      .filter(p => p.method === 'cash')
+      .reduce((sum, p) => sum + p.amount, 0);
+
     // Generate Bill Number
     const bill = 'POS-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
 
@@ -763,10 +797,20 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
         subtotal,
         billDiscount,
         total,
-        paymentMethod,
-        Number(amountReceived) || 0
+        primaryPaymentMethod,
+        Number(amountReceived) || totalCashAmount || total
       ]
     )).rows[0];
+
+    // Insert individual payments breakdown (for multi-tender & split bills)
+    const recordedPayments = [];
+    for (const p of paymentList) {
+      const pRow = (await client.query(
+        'INSERT INTO sale_payments(sale_id, shop_id, payment_method, amount, reference) VALUES($1, $2, $3, $4, $5) RETURNING *',
+        [sale.id, req.user.shop_id, p.method, p.amount, p.reference]
+      )).rows[0];
+      recordedPayments.push(pRow);
+    }
 
     // Insert sale items, audit stock movement ledger, and update database stock
     for (const l of lines) {
@@ -798,6 +842,11 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
         discount: l.lineDiscount,
         notes: l.notes,
         total: l.total
+      })),
+      payments: recordedPayments.map(p => ({
+        method: p.payment_method,
+        amount: Number(p.amount),
+        reference: p.reference
       }))
     };
 

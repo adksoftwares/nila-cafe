@@ -91,6 +91,17 @@ CREATE TABLE IF NOT EXISTS sale_items (
   line_total NUMERIC(12,2) NOT NULL
 );
 
+-- Multi-tender Payments (Cash, Card, QR, Mixed Tender, Split Bills)
+CREATE TABLE IF NOT EXISTS sale_payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sale_id UUID NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  payment_method TEXT NOT NULL CHECK(payment_method IN ('cash', 'card', 'qr')),
+  amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
+  reference TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Idempotency Keys table to prevent duplicate billing & race conditions
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   key TEXT NOT NULL,
@@ -238,6 +249,21 @@ ALTER TABLE shift_cash_adjustments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shift_cash_adjustments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS shift_adjustments_tenant_isolation ON shift_cash_adjustments;
 CREATE POLICY shift_adjustments_tenant_isolation ON shift_cash_adjustments
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+
+ALTER TABLE sale_payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_payments FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sale_payments_tenant_isolation ON sale_payments;
+CREATE POLICY sale_payments_tenant_isolation ON sale_payments
   FOR ALL
   USING (
     current_setting('app.is_admin', true) = 'true'

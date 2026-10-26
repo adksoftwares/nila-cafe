@@ -100,6 +100,32 @@ export default function ReceiptModal({ receipt, shopName, onClose }) {
               <strong>TOTAL</strong>
               <strong>{money(receipt.total)}</strong>
             </div>
+            <hr />
+            <div style={{ fontSize: '10px', color: '#475569', marginBottom: '4px' }}>
+              <strong>PAYMENTS & TENDER:</strong>
+            </div>
+            {receipt.payments && receipt.payments.length > 0 ? (
+              receipt.payments.map((p, idx) => (
+                <div className="receipt-item" key={idx} style={{ margin: '3px 0', fontSize: '10px' }}>
+                  <span>
+                    {p.method.toUpperCase()}
+                    {p.reference ? ` (${p.reference})` : ''}
+                  </span>
+                  <span>{money(p.amount)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="receipt-item" style={{ margin: '3px 0', fontSize: '10px' }}>
+                <span>{receipt.payment_method ? receipt.payment_method.toUpperCase() : 'CASH'}</span>
+                <span>{money(receipt.total)}</span>
+              </div>
+            )}
+            {receipt.amount_received > receipt.total && (
+              <div className="receipt-item" style={{ margin: '3px 0', fontSize: '10px', color: '#16a34a' }}>
+                <span>Change Returned</span>
+                <span>{money(receipt.amount_received - receipt.total)}</span>
+              </div>
+            )}
             <p className="receipt-thanks">Thank you for visiting Nila Cafe. Come again!</p>
           </div>
         ) : (

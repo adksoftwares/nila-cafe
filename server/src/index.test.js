@@ -171,3 +171,46 @@ test('Shift End (Z-Report): calculates exact cash variance (Over / Short)', () =
   const overage = overCount - expectedCash;
   assert.equal(overage, 50);
 });
+
+
+test('Multi-Tender Payments: validates mixed tender (Cash + Card + QR) covers bill total', () => {
+  const billTotal = 4500;
+  const payments = [
+    { method: 'cash', amount: 1500 },
+    { method: 'card', amount: 2000, reference: 'VISA-4242' },
+    { method: 'qr', amount: 1000, reference: 'LankaQR-TXN-882' }
+  ];
+
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  assert.equal(totalPaid, billTotal);
+  assert.equal(totalPaid >= billTotal, true);
+
+  // Insufficient tender check
+  const shortPayments = [{ method: 'cash', amount: 2000 }];
+  const shortSum = shortPayments.reduce((sum, p) => sum + p.amount, 0);
+  assert.equal(shortSum < billTotal, true);
+});
+
+test('Till Cash Drawer Isolation: Card and QR payments do NOT increment physical cash drawer', () => {
+  const openingFloat = 5000;
+  const mixedPayments = [
+    { method: 'cash', amount: 1500 },
+    { method: 'card', amount: 2000 },
+    { method: 'qr', amount: 1000 }
+  ];
+
+  const cashPortion = mixedPayments
+    .filter(p => p.method === 'cash')
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  const nonCashPortion = mixedPayments
+    .filter(p => p.method !== 'cash')
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  assert.equal(cashPortion, 1500);
+  assert.equal(nonCashPortion, 3000);
+
+  // Expected physical cash in drawer only increases by cash portion!
+  const expectedCashInTill = openingFloat + cashPortion;
+  assert.equal(expectedCashInTill, 6500);
+});

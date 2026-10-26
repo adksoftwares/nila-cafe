@@ -13,6 +13,7 @@ import ReceiptModal from './components/modals/ReceiptModal.jsx';
 import ProductModal from './components/modals/ProductModal.jsx';
 import ShopModal from './components/modals/ShopModal.jsx';
 import ShiftModal from './components/modals/ShiftModal.jsx';
+import PaymentModal from './components/modals/PaymentModal.jsx';
 
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
@@ -55,6 +56,7 @@ export default function App() {
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(null);
 
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -208,10 +210,18 @@ export default function App() {
     setCart(old => old.filter(i => i.product.id !== id));
   };
 
-  const handleCheckout = async ({ subtotal, billDiscount, total }) => {
+  const handleCheckout = ({ subtotal, billDiscount, total }) => {
     if (!cart.length || checkoutSubmitting) return;
+    setPendingCheckout({ subtotal, billDiscount, total });
+    setModal('payment');
+  };
+
+  const handleConfirmPayment = async ({ payments, amountReceived, primaryMethod }) => {
+    if (!pendingCheckout || !cart.length || checkoutSubmitting) return;
 
     setCheckoutSubmitting(true);
+    const { subtotal, billDiscount, total } = pendingCheckout;
+
     const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : 'idem-' + Date.now() + '-' + Math.random().toString(36).slice(2);
@@ -224,6 +234,9 @@ export default function App() {
       subtotal,
       discount: billDiscount,
       total,
+      payment_method: primaryMethod,
+      amount_received: amountReceived,
+      payments: payments,
       created_at: new Date().toISOString(),
       items: cart.map(i => {
         const price = Number(orderType === 'takeaway' ? i.product.takeaway_price : i.product.normal_price);
@@ -255,13 +268,15 @@ export default function App() {
               discount: 0
             })),
             discount: billDiscount,
-            paymentMethod: 'cash',
-            amountReceived: total
+            payments,
+            paymentMethod: primaryMethod,
+            amountReceived
           })
         });
         sale.bill_number = data.sale.bill_number;
         sale.total = Number(data.sale.total);
         sale.created_at = data.sale.created_at;
+        if (data.payments) sale.payments = data.payments;
       } else if (apiMode !== 'demo') {
         flash('API is offline: this checkout is saved to local workstation only.');
       }
@@ -276,6 +291,7 @@ export default function App() {
       setLastReceipt(sale);
       setCart([]);
       setDiscount(0);
+      setPendingCheckout(null);
       loadShift();
     } catch (e) {
       flash(e.message);
@@ -511,6 +527,14 @@ export default function App() {
           onCloseShift={handleCloseShift}
           onAddAdjustment={handleAddAdjustment}
           onCloseModal={() => setModal('')}
+        />
+      )}
+
+      {modal === 'payment' && pendingCheckout && (
+        <PaymentModal
+          total={pendingCheckout.total}
+          onConfirmPayment={handleConfirmPayment}
+          onClose={() => setModal('')}
         />
       )}
 
