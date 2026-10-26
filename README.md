@@ -1,66 +1,87 @@
-# 🌙 Nila Cafe (நிலா கஃபே) ☕
+# 🌙 Nila Cafe — Point of Sale (POS) & Management Platform ☕
 
-> A modern, cozy web platform and management system for **Nila Cafe** — serving delicious coffee, authentic bites, and memorable moments.
-
----
-
-## 📖 About The Project
-
-**Nila Cafe** is a web-based platform designed to showcase cafe menus, manage customer orders, handle table reservations, and provide an interactive cafe experience.
+A modern, multi-tenant browser-based POS and cafe management system designed for **Nila Cafe**. It features a fast React (Vite) frontend, Express.js REST API, PostgreSQL database schema, Docker Compose setup, inventory management, dining/takeaway/delivery billing, receipt printing, and sales reporting.
 
 ---
 
-## ✨ Key Features
+## 🚀 Features
 
-- 📜 **Digital Menu**: Interactive catalog of beverages, snacks, and daily specials with pricing.
-- 🪑 **Table Reservations**: Easy-to-use table booking and seat availability system.
-- 🛍️ **Online Ordering & Takeaway**: Streamlined cart and checkout process for quick pickups.
-- 📱 **Mobile Responsive**: Seamless experience across smartphones, tablets, and desktops.
-- 📊 **Admin Dashboard**: Menu management, order tracking, and sales analytics.
-
----
-
-## 🛠️ Tech Stack (Suggested)
-
-- **Frontend**: HTML5, CSS3 / TailwindCSS, JavaScript / React
-- **Backend**: Node.js / Python / Express
-- **Database**: PostgreSQL / MongoDB / SQLite
-- **Deployment**: Vercel / GitHub Pages
+- 🧾 **Point of Sale (POS)**: Instant item lookup, category filtering, cart management, takeaway/dining/delivery order pricing, item/bill discounts, and instant receipt preview/printing.
+- 📦 **Inventory & Products**: Product catalog with SKU codes, categories, pricing, and live stock tracking.
+- 📊 **Sales & Reporting**: Real-time sales transactions, order breakdown by channel, and instant CSV export.
+- 🏢 **Multi-Tenant / Multi-Shop**: Independent shop workspaces, tenant-isolated products and billing.
+- 💡 **Dual Mode**: Local demo mode (offline browser testing) or persistent database-backed mode (PostgreSQL + JWT auth).
 
 ---
 
-## 🚀 Getting Started
-
-### Prerequisites
-- [Git](https://git-scm.com/)
-- [Node.js](https://nodejs.org/) (optional, depending on chosen stack)
-
-### Clone the Repository
-```bash
-git clone https://github.com/adksoftwares/nila-cafe.git
-cd nila-cafe
-```
-
----
-
-## 📁 Project Structure
+## 🛠️ Project Structure
 
 ```text
 nila-cafe/
-├── assets/         # Images, logos, and media
-├── src/            # Source code (components, pages, styles)
-├── docs/           # Documentation and guides
-└── README.md       # Project overview and instructions
+├── client/              # React + Vite frontend POS interface
+│   ├── src/             # Components, styles, icons
+│   ├── package.json
+│   └── vite.config.js
+├── server/              # Express API & PostgreSQL backend
+│   ├── src/             # Authentication, products, sales, reports routes
+│   ├── sql/schema.sql   # Multi-tenant PostgreSQL database schema
+│   └── package.json
+├── docker-compose.yml   # PostgreSQL container configuration
+├── .env.example         # Environment template
+└── package.json         # Workspace root scripts
 ```
 
 ---
 
-## 🤝 Contributing
+## ⚡ Quick Start
 
-Contributions are always welcome! Feel free to fork the repository, create a feature branch, and submit a pull request.
+### 1. Install Dependencies
+```bash
+npm install
+```
+
+### 2. Start PostgreSQL Database
+```bash
+docker compose up -d db
+```
+
+### 3. Setup Environment Variables
+Copy `.env.example` to `server/.env`:
+```bash
+cp .env.example server/.env
+```
+
+### 4. Seed Initial Data
+```bash
+npm run seed --workspace server
+```
+
+### 5. Start Development Servers
+```bash
+npm run dev
+```
+
+* **Frontend**: [http://localhost:5173](http://localhost:5173)
+* **Backend API**: [http://localhost:4000/api/health](http://localhost:4000/api/health)
+
+---
+
+## 🔑 Demo Credentials
+
+### Local Demo / Database Seed Credentials:
+* **Shop Owner**: `owner@counterpoint.local` / `Owner123!`
+* **Platform Admin**: `admin@counterpoint.local` / `Admin123!`
+
+---
+
+## 📜 Available Scripts
+
+* `npm run dev` — Run both Vite frontend and Express server concurrently
+* `npm run build` — Build frontend for production
+* `npm test` — Run server test suite
+* `npm run start --workspace server` — Start Express API server only
 
 ---
 
 ## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
+MIT License.
