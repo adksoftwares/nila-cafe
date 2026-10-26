@@ -192,3 +192,26 @@ export function broadcastKDS(shopId, event, data) {
     }
   }
 }
+
+export const demoIngredients = [
+  { id: 'ing-1', shop_id: 'shop-demo', name: 'Chicken Patty', unit: 'pcs', stock: 50, min_stock_alert: 15, cost_per_unit: 350, active: true },
+  { id: 'ing-2', shop_id: 'shop-demo', name: 'Burger Bun', unit: 'pcs', stock: 60, min_stock_alert: 20, cost_per_unit: 60, active: true },
+  { id: 'ing-3', shop_id: 'shop-demo', name: 'Cheese Slice', unit: 'pcs', stock: 80, min_stock_alert: 25, cost_per_unit: 80, active: true },
+  { id: 'ing-4', shop_id: 'shop-demo', name: 'Coffee Beans', unit: 'g', stock: 5000, min_stock_alert: 1000, cost_per_unit: 8.5, active: true },
+  { id: 'ing-5', shop_id: 'shop-demo', name: 'Fresh Milk', unit: 'ml', stock: 10000, min_stock_alert: 2000, cost_per_unit: 0.5, active: true },
+  { id: 'ing-6', shop_id: 'shop-demo', name: 'Potato Fries', unit: 'g', stock: 8000, min_stock_alert: 2000, cost_per_unit: 1.2, active: true }
+];
+
+export const demoRecipes = [
+  // Chicken Burger (p1)
+  { id: 'rec-1', shop_id: 'shop-demo', product_id: 'p1', ingredient_id: 'ing-1', ingredient_name: 'Chicken Patty', unit: 'pcs', quantity_required: 1 },
+  { id: 'rec-2', shop_id: 'shop-demo', product_id: 'p1', ingredient_id: 'ing-2', ingredient_name: 'Burger Bun', unit: 'pcs', quantity_required: 1 },
+  { id: 'rec-3', shop_id: 'shop-demo', product_id: 'p1', ingredient_id: 'ing-3', ingredient_name: 'Cheese Slice', unit: 'pcs', quantity_required: 1 },
+  // French Fries (p4)
+  { id: 'rec-4', shop_id: 'shop-demo', product_id: 'p4', ingredient_id: 'ing-6', ingredient_name: 'Potato Fries', unit: 'g', quantity_required: 200 },
+  // Iced Coffee (p5)
+  { id: 'rec-5', shop_id: 'shop-demo', product_id: 'p5', ingredient_id: 'ing-4', ingredient_name: 'Coffee Beans', unit: 'g', quantity_required: 18 },
+  { id: 'rec-6', shop_id: 'shop-demo', product_id: 'p5', ingredient_id: 'ing-5', ingredient_name: 'Fresh Milk', unit: 'ml', quantity_required: 150 }
+];
+
+export const demoIngredientMovements = [];

@@ -8,6 +8,9 @@ import {
   demoShops,
   demoCustomers,
   demoPromotions,
+  demoIngredients,
+  demoRecipes,
+  demoIngredientMovements,
   demoIdempotencyCache,
   broadcastKDS
 } from '../state.js';
@@ -77,6 +80,26 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
       const lineSub = Math.round(price * q * 100) / 100;
       subtotal = Math.round((subtotal + lineSub) * 100) / 100;
       p.stock = Math.max(0, p.stock - q);
+
+      // Raw Ingredient Recipe BOM auto-depletion
+      const matchingRecipes = demoRecipes.filter(r => r.product_id === (p.id || item.productId));
+      for (const rec of matchingRecipes) {
+        const ing = demoIngredients.find(i => i.id === rec.ingredient_id);
+        if (ing) {
+          const needed = Math.round(rec.quantity_required * q * 100) / 100;
+          ing.stock = Math.max(0, Math.round((Number(ing.stock) - needed) * 100) / 100);
+          demoIngredientMovements.push({
+            id: 'imov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+            shop_id: req.user.shop_id,
+            ingredient_id: ing.id,
+            delta_qty: -needed,
+            reason: 'sale_depletion',
+            reference_id: null,
+            created_at: new Date().toISOString()
+          });
+        }
+      }
+
       lines.push({
         name: p.name,
         code: p.code,
@@ -432,6 +455,24 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         'UPDATE products SET stock = stock - $1 WHERE id = $2',
         [l.q, l.p.id]
       );
+
+      // Bill of Materials (BOM) Auto-depletion for ingredients linked to this product
+      const productRecipes = (await client.query(
+        'SELECT ingredient_id, quantity_required FROM recipe_items WHERE product_id = $1 AND shop_id = $2',
+        [l.p.id, req.user.shop_id]
+      )).rows;
+
+      for (const rec of productRecipes) {
+        const ingQty = Math.round(Number(rec.quantity_required) * l.q * 100) / 100;
+        await client.query(
+          'UPDATE ingredients SET stock = stock - $1 WHERE id = $2 AND shop_id = $3',
+          [ingQty, rec.ingredient_id, req.user.shop_id]
+        );
+        await client.query(
+          'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+          [req.user.shop_id, rec.ingredient_id, -ingQty, 'sale_depletion', sale.bill_number]
+        );
+      }
     }
 
     const responsePayload = {
@@ -636,6 +677,24 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
             'UPDATE products SET stock = stock + $1 WHERE id = $2',
             [item.quantity, item.product_id]
           );
+
+          // Restock BOM raw ingredients
+          const productRecipes = (await client.query(
+            'SELECT ingredient_id, quantity_required FROM recipe_items WHERE product_id = $1 AND shop_id = $2',
+            [item.product_id, req.user.shop_id]
+          )).rows;
+
+          for (const rec of productRecipes) {
+            const ingQty = Math.round(Number(rec.quantity_required) * item.quantity * 100) / 100;
+            await client.query(
+              'UPDATE ingredients SET stock = stock + $1 WHERE id = $2 AND shop_id = $3',
+              [ingQty, rec.ingredient_id, req.user.shop_id]
+            );
+            await client.query(
+              'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+              [req.user.shop_id, rec.ingredient_id, ingQty, 'void_restock', sale.bill_number]
+            );
+          }
         }
 
         // Reverse customer loyalty points and visits
@@ -706,8 +765,29 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
     if (Array.isArray(sale.items)) {
       for (const item of sale.items) {
         const prod = demoProducts.find(p => p.name === item.name || p.code === item.code || p.id === item.id);
+        const itemQty = (item.qty || item.quantity || 1);
         if (prod) {
-          prod.stock += (item.qty || item.quantity || 1);
+          prod.stock += itemQty;
+        }
+
+        // Restock BOM raw ingredients
+        const prodId = prod?.id || item.productId;
+        const matchingRecipes = demoRecipes.filter(r => r.product_id === prodId);
+        for (const rec of matchingRecipes) {
+          const ing = demoIngredients.find(i => i.id === rec.ingredient_id);
+          if (ing) {
+            const restoreQty = Math.round(rec.quantity_required * itemQty * 100) / 100;
+            ing.stock = Math.round((Number(ing.stock) + restoreQty) * 100) / 100;
+            demoIngredientMovements.push({
+              id: 'imov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+              shop_id: req.user.shop_id,
+              ingredient_id: ing.id,
+              delta_qty: restoreQty,
+              reason: 'void_restock',
+              reference_id: sale.bill_number,
+              created_at: new Date().toISOString()
+            });
+          }
         }
       }
     }

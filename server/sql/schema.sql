@@ -377,3 +377,84 @@ ALTER TABLE shops ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,2) NOT NULL DEFAUL
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS service_charge NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS sscl NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS vat NUMERIC(12,2) NOT NULL DEFAULT 0;
+
+-- ------------------- RAW INGREDIENTS & BILL OF MATERIALS (BOM) ------------------- --
+
+CREATE TABLE IF NOT EXISTS ingredients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT 'pcs',
+  stock NUMERIC(12,2) NOT NULL DEFAULT 0,
+  min_stock_alert NUMERIC(12,2) NOT NULL DEFAULT 10,
+  cost_per_unit NUMERIC(12,2) NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS recipe_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  ingredient_id UUID NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+  quantity_required NUMERIC(12,2) NOT NULL CHECK(quantity_required > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(product_id, ingredient_id)
+);
+
+CREATE TABLE IF NOT EXISTS ingredient_movements (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  ingredient_id UUID NOT NULL REFERENCES ingredients(id) ON DELETE CASCADE,
+  delta_qty NUMERIC(12,2) NOT NULL,
+  reason TEXT NOT NULL CHECK(reason IN ('sale_depletion', 'void_restock', 'manual_adjustment', 'purchase')),
+  reference_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ingredients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ingredients FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ingredients_tenant_isolation ON ingredients;
+CREATE POLICY ingredients_tenant_isolation ON ingredients
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+ALTER TABLE recipe_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recipe_items FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS recipe_items_tenant_isolation ON recipe_items;
+CREATE POLICY recipe_items_tenant_isolation ON recipe_items
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+ALTER TABLE ingredient_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ingredient_movements FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS ingredient_movements_tenant_isolation ON ingredient_movements;
+CREATE POLICY ingredient_movements_tenant_isolation ON ingredient_movements
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+CREATE INDEX IF NOT EXISTS idx_ingredients_shop ON ingredients(shop_id);
+CREATE INDEX IF NOT EXISTS idx_recipe_items_product ON recipe_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_ingredient_movements_ing ON ingredient_movements(ingredient_id);

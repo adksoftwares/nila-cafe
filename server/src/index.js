@@ -16,6 +16,7 @@ import reportsRouter from './routes/reports.js';
 import adminRouter from './routes/admin.js';
 import salesRouter from './routes/sales.js';
 import shopsRouter from './routes/shops.js';
+import ingredientsRouter from './routes/ingredients.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -64,6 +65,7 @@ app.use('/api/reports', reportsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/sales', salesRouter);
 app.use('/api/shops', shopsRouter);
+app.use('/api/ingredients', ingredientsRouter);
 
 // 404 Route
 app.use((req, res) => res.status(404).json({ error: 'Route not found.' }));

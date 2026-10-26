@@ -593,3 +593,72 @@ test('Z-Report Tax Aggregation: aggregates total service charges and government 
   assert.equal(vatCollected, 774.90);
   assert.equal(totalTaxes, 1079.90);
 });
+
+test('BOM Auto-Depletion: order of products decrements mapped raw ingredients accurately', () => {
+  const stockInventory = {
+    'ing-patty': 50,
+    'ing-bun': 50,
+    'ing-cheese': 50
+  };
+
+  const recipes = [
+    { product_id: 'p-burger', ingredient_id: 'ing-patty', quantity_required: 1 },
+    { product_id: 'p-burger', ingredient_id: 'ing-bun', quantity_required: 1 },
+    { product_id: 'p-burger', ingredient_id: 'ing-cheese', quantity_required: 2 } // double cheese
+  ];
+
+  const orderItems = [{ productId: 'p-burger', quantity: 3 }];
+
+  for (const item of orderItems) {
+    const matching = recipes.filter(r => r.product_id === item.productId);
+    for (const rec of matching) {
+      stockInventory[rec.ingredient_id] -= rec.quantity_required * item.quantity;
+    }
+  }
+
+  // 3 burgers: 3 patties, 3 buns, 6 cheese slices
+  assert.equal(stockInventory['ing-patty'], 47);
+  assert.equal(stockInventory['ing-bun'], 47);
+  assert.equal(stockInventory['ing-cheese'], 44);
+});
+
+test('BOM Void Invariant: transaction void restores raw ingredient stock inventory', () => {
+  const stockInventory = {
+    'ing-coffee-beans': 4946, // 5000 - 3*18
+    'ing-milk': 9550          // 10000 - 3*150
+  };
+
+  const voidedItems = [{ productId: 'p-iced-coffee', quantity: 3 }];
+  const recipes = [
+    { product_id: 'p-iced-coffee', ingredient_id: 'ing-coffee-beans', quantity_required: 18 },
+    { product_id: 'p-iced-coffee', ingredient_id: 'ing-milk', quantity_required: 150 }
+  ];
+
+  // Restock upon void
+  for (const item of voidedItems) {
+    const matching = recipes.filter(r => r.product_id === item.productId);
+    for (const rec of matching) {
+      stockInventory[rec.ingredient_id] += rec.quantity_required * item.quantity;
+    }
+  }
+
+  // Fully restored to original 5000g and 10000ml!
+  assert.equal(stockInventory['ing-coffee-beans'], 5000);
+  assert.equal(stockInventory['ing-milk'], 10000);
+});
+
+test('Ingredient Restock Ledger: adds incoming shipment and updates ledger', () => {
+  let currentStock = 20;
+  const movements = [];
+
+  const restock = (qty, reason = 'purchase') => {
+    currentStock += qty;
+    movements.push({ delta: qty, reason });
+  };
+
+  restock(50, 'purchase');
+  assert.equal(currentStock, 70);
+  assert.equal(movements.length, 1);
+  assert.equal(movements[0].delta, 50);
+  assert.equal(movements[0].reason, 'purchase');
+});
