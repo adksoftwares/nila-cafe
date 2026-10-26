@@ -101,3 +101,94 @@ CREATE INDEX IF NOT EXISTS idx_sales_shop_created ON sales(shop_id, created_at D
 CREATE INDEX IF NOT EXISTS idx_users_shop ON users(shop_id);
 CREATE INDEX IF NOT EXISTS idx_idempotency_created ON idempotency_keys(created_at);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_shop ON stock_movements(shop_id, created_at DESC);
+
+
+-- ==============================================================================
+-- ROW-LEVEL SECURITY (RLS) POLICIES FOR BULLETPROOF TENANT ISOLATION
+-- ==============================================================================
+
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
+
+-- Enforce RLS on table owner as well to avoid accidental bypass
+ALTER TABLE products FORCE ROW LEVEL SECURITY;
+ALTER TABLE sales FORCE ROW LEVEL SECURITY;
+ALTER TABLE sale_items FORCE ROW LEVEL SECURITY;
+ALTER TABLE idempotency_keys FORCE ROW LEVEL SECURITY;
+ALTER TABLE stock_movements FORCE ROW LEVEL SECURITY;
+
+-- Products Policy
+DROP POLICY IF EXISTS products_tenant_isolation ON products;
+CREATE POLICY products_tenant_isolation ON products
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+-- Sales Policy
+DROP POLICY IF EXISTS sales_tenant_isolation ON sales;
+CREATE POLICY sales_tenant_isolation ON sales
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+-- Sale Items Policy (Cascaded via Sales)
+DROP POLICY IF EXISTS sale_items_tenant_isolation ON sale_items;
+CREATE POLICY sale_items_tenant_isolation ON sale_items
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM sales s
+      WHERE s.id = sale_items.sale_id
+      AND s.shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+    )
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR EXISTS (
+      SELECT 1 FROM sales s
+      WHERE s.id = sale_items.sale_id
+      AND s.shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+    )
+  );
+
+-- Idempotency Keys Policy
+DROP POLICY IF EXISTS idempotency_keys_tenant_isolation ON idempotency_keys;
+CREATE POLICY idempotency_keys_tenant_isolation ON idempotency_keys
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+-- Stock Movements Policy
+DROP POLICY IF EXISTS stock_movements_tenant_isolation ON stock_movements;
+CREATE POLICY stock_movements_tenant_isolation ON stock_movements
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );

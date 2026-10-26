@@ -104,9 +104,30 @@ function roles(...r) {
   };
 }
 
-async function query(sql, args = []) {
+async function query(sql, args = [], user = null) {
   if (!pool) throw new Error('Database is not configured');
-  return (await pool.query(sql, args)).rows;
+  if (!user) {
+    return (await pool.query(sql, args)).rows;
+  }
+
+  // Scoped query with PostgreSQL Row-Level Security (RLS) session parameters
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (user.role === 'admin') {
+      await client.query("SELECT set_config('app.is_admin', 'true', true)");
+    } else if (user.shop_id) {
+      await client.query("SELECT set_config('app.current_shop_id', $1, true)", [user.shop_id]);
+    }
+    const res = await client.query(sql, args);
+    await client.query('COMMIT');
+    return res.rows;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ------------------- API ROUTES ------------------- //
@@ -194,7 +215,8 @@ app.get('/api/products', auth, async (req, res) => {
 
       const rows = await query(
         'SELECT id, code, name, category, takeaway_price, normal_price, stock, active FROM products WHERE shop_id = $1 ORDER BY name',
-        [targetShopId]
+        [targetShopId],
+        req.user
       );
       return res.json({ products: rows });
     }
@@ -230,7 +252,8 @@ app.post('/api/products', auth, roles('owner', 'admin'), async (req, res) => {
   try {
     const rows = await query(
       'INSERT INTO products(shop_id, code, name, category, takeaway_price, normal_price, stock) VALUES($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [targetShopId, code.trim(), name.trim(), category, Number(takeaway_price), Number(normal_price), Number(stock)]
+      [targetShopId, code.trim(), name.trim(), category, Number(takeaway_price), Number(normal_price), Number(stock)],
+      req.user
     );
     res.status(201).json({ product: rows[0] });
   } catch (e) {
@@ -382,6 +405,9 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Enforce PostgreSQL Row-Level Security tenant parameter
+    await client.query("SELECT set_config('app.current_shop_id', $1, true)", [req.user.shop_id]);
 
     // Step 1: Collect & sort unique product IDs to prevent deadlocks across concurrent orders
     const uniqueProductIds = [...new Set(items.map(i => i.productId))].sort();

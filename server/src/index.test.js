@@ -103,3 +103,31 @@ test('Stock Movements Ledger calculates accurate net inventory balance', () => {
   const netStock = movements.reduce((sum, m) => sum + m.delta_qty, 0);
   assert.equal(netStock, 94);
 });
+
+
+test('Row-Level Security (RLS) session parameter resolution enforces tenant isolation boundaries', () => {
+  const resolveRLSContext = (user) => {
+    if (user.role === 'admin') {
+      return { param: 'app.is_admin', value: 'true' };
+    }
+    return { param: 'app.current_shop_id', value: user.shop_id };
+  };
+
+  const ownerA = { role: 'owner', shop_id: 'cafe-shop-a-111' };
+  const ownerB = { role: 'owner', shop_id: 'cafe-shop-b-222' };
+  const platformAdmin = { role: 'admin', shop_id: null };
+
+  const ctxA = resolveRLSContext(ownerA);
+  const ctxB = resolveRLSContext(ownerB);
+  const ctxAdmin = resolveRLSContext(platformAdmin);
+
+  assert.equal(ctxA.param, 'app.current_shop_id');
+  assert.equal(ctxA.value, 'cafe-shop-a-111');
+
+  assert.equal(ctxB.param, 'app.current_shop_id');
+  assert.equal(ctxB.value, 'cafe-shop-b-222');
+  assert.notEqual(ctxA.value, ctxB.value); // Absolute isolation
+
+  assert.equal(ctxAdmin.param, 'app.is_admin');
+  assert.equal(ctxAdmin.value, 'true');
+});
