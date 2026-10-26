@@ -215,3 +215,19 @@ export const demoRecipes = [
 ];
 
 export const demoIngredientMovements = [];
+
+export const demoTables = [
+  { id: 'tab-1', shop_id: 'shop-demo', table_number: 'Table 1', capacity: 2, status: 'vacant', active_sale_id: null },
+  { id: 'tab-2', shop_id: 'shop-demo', table_number: 'Table 2', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-3', shop_id: 'shop-demo', table_number: 'Table 3', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-4', shop_id: 'shop-demo', table_number: 'Table 4', capacity: 4, status: 'ordered', active_sale_id: 'sale-demo-1' },
+  { id: 'tab-5', shop_id: 'shop-demo', table_number: 'Table 5', capacity: 6, status: 'vacant', active_sale_id: null },
+  { id: 'tab-6', shop_id: 'shop-demo', table_number: 'Table 6', capacity: 2, status: 'vacant', active_sale_id: null },
+  { id: 'tab-7', shop_id: 'shop-demo', table_number: 'Table 7', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-8', shop_id: 'shop-demo', table_number: 'Table 8', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-9', shop_id: 'shop-demo', table_number: 'Table 9', capacity: 6, status: 'vacant', active_sale_id: null },
+  { id: 'tab-10', shop_id: 'shop-demo', table_number: 'Table 10', capacity: 8, status: 'vacant', active_sale_id: null },
+  { id: 'tab-11', shop_id: 'shop-demo', table_number: 'Balcony 1', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-12', shop_id: 'shop-demo', table_number: 'Balcony 2', capacity: 4, status: 'vacant', active_sale_id: null },
+  { id: 'tab-13', shop_id: 'shop-demo', table_number: 'VIP Lounge', capacity: 10, status: 'vacant', active_sale_id: null }
+];

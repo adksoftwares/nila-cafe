@@ -13,7 +13,9 @@ import {
   User,
   Star,
   Tag,
-  Check
+  Check,
+  ChefHat,
+  LayoutGrid
 } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
 import { calculateBillTaxes } from '../../utils/tax.js';
@@ -41,6 +43,8 @@ export default function CartPanel({
   promotions = [],
   onOpenAddCustomer,
   onCheckout,
+  onHoldTable,
+  onOpenTableFloorPlan,
   checkoutSubmitting = false,
   taxConfig = {}
 }) {
@@ -143,18 +147,31 @@ export default function CartPanel({
       {/* Dining Table Selection */}
       {orderType === 'dining' && (
         <div style={{ padding: '8px 14px', background: '#f8fafd', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)' }}>Table / Seat #:</label>
-          <select
-            value={tableNumber}
-            onChange={e => setTableNumber(e.target.value)}
-            style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}
-          >
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'Balcony 1', 'Balcony 2', 'VIP Lounge'].map(num => (
-              <option key={num} value={`Table ${num}`}>
-                Table {num}
-              </option>
-            ))}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink)' }}>Table:</label>
+            <select
+              value={tableNumber}
+              onChange={e => setTableNumber(e.target.value)}
+              style={{ fontSize: '11px', padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff' }}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 'Balcony 1', 'Balcony 2', 'VIP Lounge'].map(num => (
+                <option key={num} value={`Table ${num}`}>
+                  Table {num}
+                </option>
+              ))}
+            </select>
+          </div>
+          {onOpenTableFloorPlan && (
+            <button
+              type="button"
+              onClick={onOpenTableFloorPlan}
+              className="secondary-btn small"
+              style={{ fontSize: 10, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              title="Open Visual Table Floor Plan"
+            >
+              <LayoutGrid size={12} /> Floor Plan
+            </button>
+          )}
         </div>
       )}
 
@@ -459,27 +476,87 @@ export default function CartPanel({
             </div>
           </div>
 
-          <button
-            className="checkout-btn"
-            disabled={checkoutSubmitting}
-            style={{ opacity: checkoutSubmitting ? 0.7 : 1, cursor: checkoutSubmitting ? 'not-allowed' : 'pointer' }}
-            onClick={() => onCheckout({
-              subtotal,
-              billDiscount: totalDiscount,
-              serviceCharge: taxes.serviceCharge,
-              sscl: taxes.sscl,
-              vat: taxes.vat,
-              total,
-              customerId: selectedCustomer ? selectedCustomer.id : null,
-              customerName: selectedCustomer ? selectedCustomer.name : null,
-              customerPhone: selectedCustomer ? selectedCustomer.phone : null,
-              pointsEarned: pointsToEarn,
-              pointsRedeemed: pointsDiscount,
-              promotionCode: appliedPromotion ? appliedPromotion.code : null
-            })}
-          >
-            {checkoutSubmitting ? 'Processing Order…' : `Charge ${money(total)}`} <ArrowDownRight size={17} />
-          </button>
+          {orderType === 'dining' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={checkoutSubmitting}
+                onClick={() => onHoldTable?.({
+                  subtotal,
+                  billDiscount: totalDiscount,
+                  serviceCharge: taxes.serviceCharge,
+                  sscl: taxes.sscl,
+                  vat: taxes.vat,
+                  total,
+                  customerId: selectedCustomer ? selectedCustomer.id : null,
+                  customerName: selectedCustomer ? selectedCustomer.name : null,
+                  customerPhone: selectedCustomer ? selectedCustomer.phone : null,
+                  pointsEarned: pointsToEarn,
+                  pointsRedeemed: pointsDiscount,
+                  promotionCode: appliedPromotion ? appliedPromotion.code : null
+                })}
+                style={{
+                  padding: '10px 8px',
+                  fontSize: 12,
+                  borderColor: '#d97706',
+                  color: '#b45309',
+                  background: '#fffbeb',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4
+                }}
+                title="Send order ticket to kitchen and keep table open"
+              >
+                <ChefHat size={14} /> Send KOT (Hold)
+              </button>
+
+              <button
+                className="checkout-btn"
+                disabled={checkoutSubmitting}
+                style={{ margin: 0, padding: '10px 8px', fontSize: 12 }}
+                onClick={() => onCheckout({
+                  subtotal,
+                  billDiscount: totalDiscount,
+                  serviceCharge: taxes.serviceCharge,
+                  sscl: taxes.sscl,
+                  vat: taxes.vat,
+                  total,
+                  customerId: selectedCustomer ? selectedCustomer.id : null,
+                  customerName: selectedCustomer ? selectedCustomer.name : null,
+                  customerPhone: selectedCustomer ? selectedCustomer.phone : null,
+                  pointsEarned: pointsToEarn,
+                  pointsRedeemed: pointsDiscount,
+                  promotionCode: appliedPromotion ? appliedPromotion.code : null
+                })}
+              >
+                {checkoutSubmitting ? 'Processing…' : `Pay ${money(total)}`} <ArrowDownRight size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              className="checkout-btn"
+              disabled={checkoutSubmitting}
+              style={{ opacity: checkoutSubmitting ? 0.7 : 1, cursor: checkoutSubmitting ? 'not-allowed' : 'pointer' }}
+              onClick={() => onCheckout({
+                subtotal,
+                billDiscount: totalDiscount,
+                serviceCharge: taxes.serviceCharge,
+                sscl: taxes.sscl,
+                vat: taxes.vat,
+                total,
+                customerId: selectedCustomer ? selectedCustomer.id : null,
+                customerName: selectedCustomer ? selectedCustomer.name : null,
+                customerPhone: selectedCustomer ? selectedCustomer.phone : null,
+                pointsEarned: pointsToEarn,
+                pointsRedeemed: pointsDiscount,
+                promotionCode: appliedPromotion ? appliedPromotion.code : null
+              })}
+            >
+              {checkoutSubmitting ? 'Processing Order…' : `Charge ${money(total)}`} <ArrowDownRight size={17} />
+            </button>
+          )}
 
           <div className="secure-note">
             <ShieldCheck size={13} />

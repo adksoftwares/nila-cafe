@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS sales (
   order_type TEXT NOT NULL CHECK(order_type IN ('takeaway','delivery','dining')),
   table_number TEXT,
   kitchen_status TEXT NOT NULL DEFAULT 'pending' CHECK(kitchen_status IN ('pending', 'preparing', 'ready', 'served', 'voided')),
-  status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed', 'voided')),
+  status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('open', 'completed', 'voided')),
   voided_at TIMESTAMPTZ,
   void_reason TEXT,
   void_authorized_by UUID REFERENCES users(id),
@@ -458,3 +458,36 @@ CREATE POLICY ingredient_movements_tenant_isolation ON ingredient_movements
 CREATE INDEX IF NOT EXISTS idx_ingredients_shop ON ingredients(shop_id);
 CREATE INDEX IF NOT EXISTS idx_recipe_items_product ON recipe_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_ingredient_movements_ing ON ingredient_movements(ingredient_id);
+
+-- ------------------- RESTAURANT TABLES & OPEN TABS ENGINE ------------------- --
+
+CREATE TABLE IF NOT EXISTS restaurant_tables (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  table_number TEXT NOT NULL,
+  capacity INTEGER NOT NULL DEFAULT 4,
+  status TEXT NOT NULL DEFAULT 'vacant' CHECK(status IN ('vacant', 'occupied', 'ordered', 'bill_printed')),
+  active_sale_id UUID REFERENCES sales(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(shop_id, table_number)
+);
+
+ALTER TABLE restaurant_tables ENABLE ROW LEVEL SECURITY;
+ALTER TABLE restaurant_tables FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS restaurant_tables_tenant_isolation ON restaurant_tables;
+CREATE POLICY restaurant_tables_tenant_isolation ON restaurant_tables
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_shop ON restaurant_tables(shop_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_tables_status ON restaurant_tables(shop_id, status);
+
+ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_status_check;
+ALTER TABLE sales ADD CONSTRAINT sales_status_check CHECK(status IN ('open', 'completed', 'voided'));

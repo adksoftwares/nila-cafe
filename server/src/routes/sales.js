@@ -11,6 +11,7 @@ import {
   demoIngredients,
   demoRecipes,
   demoIngredientMovements,
+  demoTables,
   demoIdempotencyCache,
   broadcastKDS
 } from '../state.js';
@@ -202,6 +203,15 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
     };
 
     demoSales.unshift(demoSale);
+
+    // Free dining table upon settlement
+    if (orderType === 'dining' && tableNumber) {
+      const table = demoTables.find(t => t.table_number === tableNumber);
+      if (table) {
+        table.status = 'vacant';
+        table.active_sale_id = null;
+      }
+    }
 
     broadcastKDS(req.user.shop_id, 'order:new', {
       id: demoSale.id,
@@ -501,6 +511,14 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
       );
     }
 
+    // Free dining table upon settlement
+    if (orderType === 'dining' && tableNumber) {
+      await client.query(
+        "UPDATE restaurant_tables SET status = 'vacant', active_sale_id = null WHERE shop_id = $1 AND table_number = $2",
+        [req.user.shop_id, tableNumber]
+      );
+    }
+
     await client.query('COMMIT');
 
     // Broadcast new order to connected Kitchen Display System (KDS) screens
@@ -727,7 +745,15 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
           ]
         );
 
-        await client.query('COMMIT');
+        // Free dining table upon void
+        if (sale.order_type === 'dining' && sale.table_number) {
+          await client.query(
+            "UPDATE restaurant_tables SET status = 'vacant', active_sale_id = null WHERE shop_id = $1 AND table_number = $2",
+            [req.user.shop_id, sale.table_number]
+          );
+        }
+
+    await client.query('COMMIT');
 
         broadcastKDS(req.user.shop_id, 'order:status', {
           orderId: sale.id,
@@ -798,6 +824,15 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
         c.loyalty_points = Math.max(0, c.loyalty_points - (sale.points_earned || 0) + (sale.points_redeemed || 0));
         c.total_spent = Math.max(0, c.total_spent - sale.total);
         c.total_visits = Math.max(0, c.total_visits - 1);
+      }
+    }
+
+    // Free dining table upon void in demo mode
+    if (sale.order_type === 'dining' && sale.table_number) {
+      const table = demoTables.find(t => t.table_number === sale.table_number);
+      if (table) {
+        table.status = 'vacant';
+        table.active_sale_id = null;
       }
     }
 

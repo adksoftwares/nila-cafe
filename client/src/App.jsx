@@ -17,6 +17,7 @@ import ShiftModal from './components/modals/ShiftModal.jsx';
 import PaymentModal from './components/modals/PaymentModal.jsx';
 import VoidModal from './components/modals/VoidModal.jsx';
 import CustomerModal from './components/modals/CustomerModal.jsx';
+import TableModal from './components/modals/TableModal.jsx';
 
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
@@ -363,6 +364,59 @@ export default function App() {
 
   const handleRemoveItem = (id) => {
     setCart(old => old.filter(i => i.product.id !== id));
+  };
+
+  const handleHoldTable = async (details) => {
+    if (!cart.length || checkoutSubmitting) return;
+    setCheckoutSubmitting(true);
+    try {
+      const res = await api('/tables/hold', {
+        method: 'POST',
+        body: JSON.stringify({
+          tableNumber,
+          items: cart.map(i => ({
+            productId: i.product.id,
+            quantity: i.qty,
+            notes: i.notes || ''
+          })),
+          discount: details.billDiscount,
+          customerId: details.customerId
+        })
+      });
+
+      if (res.success) {
+        flash(res.message || `Table ${tableNumber} sent to kitchen as Open Tab!`, 'success');
+        setCart([]); // Clear cart as order is held on open table
+        loadSales();
+      }
+    } catch (err) {
+      flash(err.message || 'Could not hold table tab', 'error');
+    } finally {
+      setCheckoutSubmitting(false);
+    }
+  };
+
+  const handleLoadActiveTableOrder = (table) => {
+    setOrderType('dining');
+    setTableNumber(table.table_number);
+    if (table.items?.length) {
+      setCart(table.items.map(item => {
+        const prod = products.find(p => p.id === item.product_id || p.code === item.code) || {
+          id: item.product_id,
+          name: item.name,
+          code: item.code,
+          normal_price: item.price,
+          takeaway_price: item.price,
+          stock: 99
+        };
+        return {
+          product: prod,
+          qty: item.qty || 1,
+          notes: item.notes || ''
+        };
+      }));
+      flash(`Loaded Open Tab for ${table.table_number}`, 'success');
+    }
   };
 
   const handleCheckout = (checkoutDetails) => {
@@ -721,6 +775,8 @@ export default function App() {
               promotions={promotions}
               onOpenAddCustomer={() => setModal('customer')}
               onCheckout={handleCheckout}
+              onHoldTable={handleHoldTable}
+              onOpenTableFloorPlan={() => setModal('table')}
               checkoutSubmitting={checkoutSubmitting}
               taxConfig={taxConfig}
             />
@@ -856,6 +912,17 @@ export default function App() {
         <CustomerModal
           onSave={handleCreateCustomer}
           onClose={() => setModal('')}
+        />
+      )}
+
+      {modal === 'table' && (
+        <TableModal
+          api={api}
+          selectedTable={tableNumber}
+          onSelectTable={setTableNumber}
+          onLoadActiveTableOrder={handleLoadActiveTableOrder}
+          onClose={() => setModal('')}
+          onFlash={flash}
         />
       )}
 

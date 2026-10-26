@@ -34,6 +34,8 @@ export default function POSPage({
   promotions,
   onOpenAddCustomer,
   onCheckout,
+  onHoldTable,
+  onOpenTableFloorPlan,
   checkoutSubmitting,
   taxConfig
 }) {
@@ -98,6 +100,8 @@ export default function POSPage({
           promotions={promotions}
           onOpenAddCustomer={onOpenAddCustomer}
           onCheckout={onCheckout}
+          onHoldTable={onHoldTable}
+          onOpenTableFloorPlan={onOpenTableFloorPlan}
           checkoutSubmitting={checkoutSubmitting}
           taxConfig={taxConfig}
         />

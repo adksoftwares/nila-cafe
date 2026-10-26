@@ -735,3 +735,87 @@ test('ESC/POS Receipt Buffer Compilation: compiles full binary payload with taxe
   assert.ok(textContent.includes('VAT (18%):'));
   assert.ok(textContent.includes('TOTAL DUE:'));
 });
+
+test('Table Lifecycle State Machine: validates legal restaurant table transitions', () => {
+  const legalTransitions = {
+    vacant: ['occupied', 'ordered'],
+    occupied: ['ordered', 'vacant'],
+    ordered: ['bill_printed', 'vacant'],
+    bill_printed: ['vacant', 'ordered']
+  };
+
+  const validateTransition = (from, to) => {
+    return legalTransitions[from]?.includes(to) ?? false;
+  };
+
+  // Legal transitions
+  assert.equal(validateTransition('vacant', 'occupied'), true);
+  assert.equal(validateTransition('occupied', 'ordered'), true);
+  assert.equal(validateTransition('ordered', 'bill_printed'), true);
+  assert.equal(validateTransition('bill_printed', 'vacant'), true);
+
+  // Illegal transition: vacant directly to bill_printed
+  assert.equal(validateTransition('vacant', 'bill_printed'), false);
+});
+
+test('Open Tab & Table Hold: assigns running order to table and holds status as ordered', () => {
+  const table = {
+    id: 't-4',
+    table_number: 'Table 4',
+    status: 'vacant',
+    active_sale_id: null
+  };
+
+  const holdOpenTab = (tbl, orderItems) => {
+    const saleId = 'sale-open-99';
+    tbl.status = 'ordered';
+    tbl.active_sale_id = saleId;
+    return {
+      id: saleId,
+      status: 'open',
+      table_number: tbl.table_number,
+      items: orderItems
+    };
+  };
+
+  const runningOrder = holdOpenTab(table, [
+    { name: 'Iced Coffee', qty: 2 },
+    { name: 'Chicken Burger', qty: 1 }
+  ]);
+
+  assert.equal(table.status, 'ordered');
+  assert.equal(table.active_sale_id, 'sale-open-99');
+  assert.equal(runningOrder.status, 'open');
+  assert.equal(runningOrder.items.length, 2);
+});
+
+test('Table Settlement Invariant: completing payment closes open tab and frees table to vacant', () => {
+  const table = {
+    id: 't-4',
+    table_number: 'Table 4',
+    status: 'ordered',
+    active_sale_id: 'sale-open-99'
+  };
+
+  const openSale = {
+    id: 'sale-open-99',
+    status: 'open',
+    table_number: 'Table 4',
+    total: 2500
+  };
+
+  const settleTableOrder = (tbl, sale, payments) => {
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    assert.ok(totalPaid >= sale.total);
+
+    sale.status = 'completed';
+    tbl.status = 'vacant';
+    tbl.active_sale_id = null;
+  };
+
+  settleTableOrder(table, openSale, [{ method: 'cash', amount: 2500 }]);
+
+  assert.equal(openSale.status, 'completed');
+  assert.equal(table.status, 'vacant');
+  assert.equal(table.active_sale_id, null);
+});

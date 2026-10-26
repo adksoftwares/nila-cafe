@@ -18,6 +18,7 @@ import salesRouter from './routes/sales.js';
 import shopsRouter from './routes/shops.js';
 import ingredientsRouter from './routes/ingredients.js';
 import printerRouter from './routes/printer.js';
+import tablesRouter from './routes/tables.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
@@ -68,6 +69,7 @@ app.use('/api/sales', salesRouter);
 app.use('/api/shops', shopsRouter);
 app.use('/api/ingredients', ingredientsRouter);
 app.use('/api/printer', printerRouter);
+app.use('/api/tables', tablesRouter);
 
 // 404 Route
 app.use((req, res) => res.status(404).json({ error: 'Route not found.' }));
