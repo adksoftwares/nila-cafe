@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Clock, DollarSign, CloudOff, CloudUpload, RefreshCw, WifiOff } from 'lucide-react';
+import { Activity, Clock, DollarSign, CloudOff, CloudUpload, RefreshCw, WifiOff, Zap } from 'lucide-react';
 import { money } from '../utils/formatters.js';
 
 export default function Topbar({
@@ -13,6 +13,7 @@ export default function Topbar({
   offlineQueueCount = 0,
   isSyncing = false,
   onTriggerSync,
+  onKickDrawer,
   onFlash
 }) {
   const initial = user?.name?.[0]?.toUpperCase() || 'U';
@@ -85,26 +86,49 @@ export default function Topbar({
 
         {/* Cashier Shift Status Pill */}
         {user?.role !== 'admin' && (
-          <button
-            type="button"
-            onClick={onOpenShiftModal}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 11px',
-              borderRadius: '20px',
-              fontSize: '11px',
-              fontWeight: 600,
-              border: shift ? '1px solid #bbf7d0' : '1px solid #fecdd3',
-              background: shift ? '#f0fdf4' : '#fff1f2',
-              color: shift ? '#166534' : '#9f1239',
-              marginRight: '6px'
-            }}
-          >
-            <Clock size={13} />
-            {shift ? `Till: ${money(expectedCash)}` : 'Till Closed (Click to Open)'}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onKickDrawer}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 10px',
+                borderRadius: '20px',
+                fontSize: '11px',
+                fontWeight: 600,
+                border: '1px solid #fed7aa',
+                background: '#fffbeb',
+                color: '#b45309',
+                marginRight: '6px',
+                cursor: 'pointer'
+              }}
+              title="Pop Cash Drawer (RJ11 Kick Pulse)"
+            >
+              <Zap size={12} color="#f59e0b" /> Pop Drawer
+            </button>
+            <button
+              type="button"
+              onClick={onOpenShiftModal}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '5px 11px',
+                borderRadius: '20px',
+                fontSize: '11px',
+                fontWeight: 600,
+                border: shift ? '1px solid #bbf7d0' : '1px solid #fecdd3',
+                background: shift ? '#f0fdf4' : '#fff1f2',
+                color: shift ? '#166534' : '#9f1239',
+                marginRight: '6px'
+              }}
+            >
+              <Clock size={13} />
+              {shift ? `Till: ${money(expectedCash)}` : 'Till Closed (Click to Open)'}
+            </button>
+          </>
         )}
 
         <span className={'status-dot ' + (apiMode === 'connected' && isOnline ? 'online' : '')}></span>

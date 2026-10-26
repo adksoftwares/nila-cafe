@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateBillTaxes } from './utils/tax.js';
+import {
+  ESCPOS_COMMANDS,
+  generateDrawerKickESCPOS,
+  generateReceiptESCPOS,
+  formatTwoColumns
+} from './utils/escpos.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -661,4 +667,71 @@ test('Ingredient Restock Ledger: adds incoming shipment and updates ledger', () 
   assert.equal(movements.length, 1);
   assert.equal(movements[0].delta, 50);
   assert.equal(movements[0].reason, 'purchase');
+});
+
+test('ESC/POS Command Sequence: initializes printer and validates standard byte constants', () => {
+  // ESC @ = [0x1B, 0x40]
+  assert.deepEqual(Array.from(ESCPOS_COMMANDS.INIT), [0x1B, 0x40]);
+  // GS V 65 3 = feed & cut
+  assert.deepEqual(Array.from(ESCPOS_COMMANDS.CUT_PAPER), [0x1D, 0x56, 0x41, 0x03]);
+});
+
+test('ESC/POS Hardware Cash Drawer Kick Pulse: generates RJ11 pin 2 electrical pulse', () => {
+  const pulse = generateDrawerKickESCPOS();
+  // Standard ESC p 0 25 250 -> [0x1B, 0x70, 0x00, 0x19, 0xFA]
+  assert.deepEqual(Array.from(pulse), [0x1B, 0x70, 0x00, 0x19, 0xFA]);
+});
+
+test('ESC/POS Two-Column Alignment: formats 80mm (48 col) and 58mm (32 col) margins', () => {
+  const line80 = formatTwoColumns('Subtotal:', 'LKR 1,500.00', 48);
+  assert.equal(line80.length, 48);
+  assert.ok(line80.startsWith('Subtotal:'));
+  assert.ok(line80.endsWith('LKR 1,500.00'));
+
+  const line58 = formatTwoColumns('Subtotal:', '1500.00', 32);
+  assert.equal(line58.length, 32);
+  assert.ok(line58.startsWith('Subtotal:'));
+  assert.ok(line58.endsWith('1500.00'));
+});
+
+test('ESC/POS Receipt Buffer Compilation: compiles full binary payload with taxes & items', () => {
+  const sampleSale = {
+    bill_number: 'POS-TEST-8899',
+    order_type: 'dining',
+    table_number: 'Table 4',
+    cashier_name: 'Cashier One',
+    created_at: new Date().toISOString(),
+    subtotal: 2000,
+    discount: 100,
+    service_charge: 190,
+    sscl: 52.25,
+    vat: 385.61,
+    total: 2527.86,
+    payment_method: 'cash',
+    amount_received: 3000,
+    items: [
+      { name: 'Chicken Burger', qty: 2, price: 950, total: 1900 },
+      { name: 'Fresh Juice', qty: 1, price: 400, total: 400 }
+    ],
+    payments: [{ method: 'cash', amount: 2527.86 }]
+  };
+
+  const buffer = generateReceiptESCPOS(sampleSale, {
+    paperWidth: 80,
+    pulseDrawer: true,
+    shopName: 'Nila Cafe'
+  });
+
+  assert.ok(buffer instanceof Uint8Array);
+  assert.ok(buffer.length > 200);
+
+  // Converts buffer to string to verify text content is embedded
+  const textContent = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+  assert.ok(textContent.includes('Nila Cafe'));
+  assert.ok(textContent.includes('POS-TEST-8899'));
+  assert.ok(textContent.includes('Chicken Burger'));
+  assert.ok(textContent.includes('Service Charge (10%):'));
+  assert.ok(textContent.includes('SSCL Levy (2.5%):'));
+  assert.ok(textContent.includes('VAT (18%):'));
+  assert.ok(textContent.includes('TOTAL DUE:'));
 });

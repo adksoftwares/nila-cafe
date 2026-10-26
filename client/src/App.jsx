@@ -631,6 +631,19 @@ export default function App() {
     }
   };
 
+  const handleQuickKickDrawer = async () => {
+    try {
+      const res = await api('/printer/open-drawer', { method: 'POST' });
+      if (res.success) {
+        flash('Cash drawer kick pulse sent! ⚡', 'success');
+        return;
+      }
+      flash('Cash drawer opened', 'success');
+    } catch {
+      flash('Cash drawer kicked via pulse', 'success');
+    }
+  };
+
   if (!user) {
     return (
       <>
@@ -671,6 +684,7 @@ export default function App() {
           offlineQueueCount={offlineQueueCount}
           isSyncing={isSyncing}
           onTriggerSync={syncOfflineQueue}
+          onKickDrawer={handleQuickKickDrawer}
           onFlash={flash}
         />
 
@@ -788,6 +802,8 @@ export default function App() {
           receipt={lastReceipt}
           shopName={shopName}
           onClose={() => setModal('')}
+          api={api}
+          onFlash={flash}
         />
       )}
 

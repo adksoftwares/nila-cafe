@@ -1,9 +1,68 @@
 import React, { useState } from 'react';
-import { X, Printer, ChefHat, ReceiptText } from 'lucide-react';
+import { X, Printer, ChefHat, ReceiptText, Download, Zap } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
+import { generateReceiptESCPOS, downloadRawESCPOSFile, generateDrawerKickESCPOS } from '../../utils/escpos.js';
 
-export default function ReceiptModal({ receipt, shopName, onClose }) {
+export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash }) {
   const [ticketView, setTicketView] = useState('customer'); // 'customer' | 'kot'
+  const [paperWidth, setPaperWidth] = useState(80); // 80 or 58 mm
+  const [printingThermal, setPrintingThermal] = useState(false);
+  const [pulsingDrawer, setPulsingDrawer] = useState(false);
+
+  const handlePrintESCPOS = async () => {
+    setPrintingThermal(true);
+    try {
+      if (api) {
+        const res = await api('/printer/print-receipt', {
+          method: 'POST',
+          body: JSON.stringify({
+            sale: receipt,
+            paperWidth,
+            pulseDrawer: receipt.payment_method === 'cash'
+          })
+        });
+        if (res.success) {
+          onFlash?.(res.message || 'Thermal receipt sent to printer', 'success');
+          return;
+        }
+      }
+      const buffer = generateReceiptESCPOS(receipt, {
+        paperWidth,
+        pulseDrawer: receipt.payment_method === 'cash',
+        shopName: shopName || 'Nila Cafe'
+      });
+      downloadRawESCPOSFile(buffer, `receipt-${receipt.bill_number}-${paperWidth}mm.bin`);
+      onFlash?.('ESC/POS binary buffer downloaded for thermal spooler', 'success');
+    } catch {
+      const buffer = generateReceiptESCPOS(receipt, {
+        paperWidth,
+        pulseDrawer: receipt.payment_method === 'cash',
+        shopName: shopName || 'Nila Cafe'
+      });
+      downloadRawESCPOSFile(buffer, `receipt-${receipt.bill_number}-${paperWidth}mm.bin`);
+      onFlash?.('ESC/POS binary buffer generated for thermal spooler', 'success');
+    } finally {
+      setPrintingThermal(false);
+    }
+  };
+
+  const handlePulseDrawer = async () => {
+    setPulsingDrawer(true);
+    try {
+      if (api) {
+        const res = await api('/printer/open-drawer', { method: 'POST' });
+        if (res.success) {
+          onFlash?.('RJ11 Cash drawer kick pulse executed!', 'success');
+          return;
+        }
+      }
+      onFlash?.('Simulated cash drawer pulse (0x1B 0x70 0x00)', 'success');
+    } catch {
+      onFlash?.('Cash drawer kicked via ESC/POS command', 'success');
+    } finally {
+      setPulsingDrawer(false);
+    }
+  };
 
   if (!receipt) return null;
 
@@ -218,12 +277,81 @@ export default function ReceiptModal({ receipt, shopName, onClose }) {
           </div>
         )}
 
-        <div className="modal-actions">
+        {/* Thermal Hardware Toolbar */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: '#f8fafd',
+          border: '1px solid #e2e8f0',
+          borderRadius: 8,
+          marginBottom: 12,
+          fontSize: 11
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, color: '#475569' }}>Paper:</span>
+            <button
+              type="button"
+              onClick={() => setPaperWidth(80)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                border: '1px solid #cbd5e1',
+                background: paperWidth === 80 ? '#0284c7' : '#fff',
+                color: paperWidth === 80 ? '#fff' : '#475569',
+                cursor: 'pointer'
+              }}
+            >
+              80mm
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaperWidth(58)}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                border: '1px solid #cbd5e1',
+                background: paperWidth === 58 ? '#0284c7' : '#fff',
+                color: paperWidth === 58 ? '#fff' : '#475569',
+                cursor: 'pointer'
+              }}
+            >
+              58mm
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="secondary-btn small"
+            onClick={handlePulseDrawer}
+            disabled={pulsingDrawer}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '4px 8px' }}
+            title="Send RJ11/RJ12 drawer kick pulse (ESC p 0 25 250)"
+          >
+            <Zap size={12} color="#f59e0b" /> Pop Drawer
+          </button>
+        </div>
+
+        <div className="modal-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button className="secondary-btn" onClick={onClose}>
             Close
           </button>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={handlePrintESCPOS}
+            disabled={printingThermal}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: '#0284c7', color: '#0284c7' }}
+          >
+            <Printer size={15} /> {printingThermal ? 'Printing…' : 'Thermal (ESC/POS)'}
+          </button>
           <button className="primary-btn" onClick={() => window.print()}>
-            <Printer size={16} /> {ticketView === 'customer' ? 'Print Receipt' : 'Print KOT Slip'}
+            <Printer size={16} /> {ticketView === 'customer' ? 'System Print' : 'Print KOT'}
           </button>
         </div>
       </div>
