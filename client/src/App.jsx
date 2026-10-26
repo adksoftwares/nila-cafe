@@ -43,6 +43,7 @@ export default function App() {
   });
 
   const [orderType, setOrderType] = useState('takeaway');
+  const [tableNumber, setTableNumber] = useState('Table 1');
   const [cart, setCart] = useState([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All items');
@@ -180,6 +181,12 @@ export default function App() {
     );
   };
 
+  const handleChangeNotes = (id, notes) => {
+    setCart(old =>
+      old.map(i => (i.product.id === id ? { ...i, notes } : i))
+    );
+  };
+
   const handleRemoveItem = (id) => {
     setCart(old => old.filter(i => i.product.id !== id));
   };
@@ -191,6 +198,7 @@ export default function App() {
       id: Date.now(),
       bill_number: 'POS-' + Date.now().toString().slice(-7),
       order_type: orderType,
+      table_number: orderType === 'dining' ? tableNumber : null,
       subtotal,
       discount: billDiscount,
       total,
@@ -202,6 +210,7 @@ export default function App() {
           code: i.product.code,
           qty: i.qty,
           price,
+          notes: i.notes || '',
           total: price * i.qty
         };
       })
@@ -213,9 +222,11 @@ export default function App() {
           method: 'POST',
           body: JSON.stringify({
             orderType,
+            tableNumber: orderType === 'dining' ? tableNumber : null,
             items: cart.map(i => ({
               productId: i.product.id,
               quantity: i.qty,
+              notes: i.notes || '',
               discount: 0
             })),
             discount: billDiscount,
@@ -340,9 +351,12 @@ export default function App() {
               setSearch={setSearch}
               orderType={orderType}
               setOrderType={setOrderType}
+              tableNumber={tableNumber}
+              setTableNumber={setTableNumber}
               cart={cart}
               onAddProduct={handleAddProductToCart}
               onChangeQty={handleChangeQty}
+              onChangeNotes={handleChangeNotes}
               onRemoveItem={handleRemoveItem}
               discount={discount}
               setDiscount={setDiscount}

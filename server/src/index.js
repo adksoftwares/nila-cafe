@@ -336,7 +336,14 @@ app.post('/api/admin/shops', auth, roles('admin'), async (req, res) => {
 
 // Sales: Checkout & Inventory Management (Deadlock-Free Batch Query)
 app.post('/api/sales', auth, roles('owner'), async (req, res) => {
-  const { orderType, items = [], discount = 0, paymentMethod = 'cash', amountReceived = 0 } = req.body;
+  const {
+    orderType,
+    tableNumber = null,
+    items = [],
+    discount = 0,
+    paymentMethod = 'cash',
+    amountReceived = 0
+  } = req.body;
 
   if (!['takeaway', 'delivery', 'dining'].includes(orderType) || !Array.isArray(items) || !items.length) {
     return res.status(400).json({ error: 'Choose an order type and at least one product.' });
@@ -374,6 +381,7 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
     for (const item of items) {
       const q = Number(item.quantity);
       const d = Math.max(0, Number(item.discount) || 0);
+      const notes = String(item.notes || '').trim() || null;
 
       if (!Number.isInteger(q) || q < 1) {
         throw new Error('Quantity must be a positive whole number.');
@@ -392,7 +400,7 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
       const lineTotal = Math.round((lineSubtotal - lineDiscount) * 100) / 100;
 
       subtotal = Math.round((subtotal + lineSubtotal) * 100) / 100;
-      lines.push({ p, q, price, lineDiscount, total: lineTotal });
+      lines.push({ p, q, price, lineDiscount, total: lineTotal, notes });
     }
 
     const billDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
@@ -403,15 +411,26 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
 
     // Insert Sale record
     const sale = (await client.query(
-      'INSERT INTO sales(shop_id, user_id, bill_number, order_type, subtotal, discount, total, payment_method, amount_received) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
-      [req.user.shop_id, req.user.sub, bill, orderType, subtotal, billDiscount, total, paymentMethod, Number(amountReceived) || 0]
+      'INSERT INTO sales(shop_id, user_id, bill_number, order_type, table_number, subtotal, discount, total, payment_method, amount_received) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
+      [
+        req.user.shop_id,
+        req.user.sub,
+        bill,
+        orderType,
+        orderType === 'dining' ? (tableNumber || 'Table 1') : null,
+        subtotal,
+        billDiscount,
+        total,
+        paymentMethod,
+        Number(amountReceived) || 0
+      ]
     )).rows[0];
 
     // Insert sale items and update database stock
     for (const l of lines) {
       await client.query(
-        'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, line_total) VALUES($1, $2, $3, $4, $5, $6, $7, $8)',
-        [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.lineDiscount, l.total]
+        'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.lineDiscount, l.notes, l.total]
       );
       await client.query(
         'UPDATE products SET stock = stock - $1 WHERE id = $2',
@@ -429,6 +448,7 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
         quantity: l.q,
         price: l.price,
         discount: l.lineDiscount,
+        notes: l.notes,
         total: l.total
       }))
     });

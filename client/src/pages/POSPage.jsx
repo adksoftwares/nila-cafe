@@ -13,9 +13,12 @@ export default function POSPage({
   setSearch,
   orderType,
   setOrderType,
+  tableNumber,
+  setTableNumber,
   cart,
   onAddProduct,
   onChangeQty,
+  onChangeNotes,
   onRemoveItem,
   discount,
   setDiscount,
@@ -64,8 +67,11 @@ export default function POSPage({
         <CartPanel
           orderType={orderType}
           setOrderType={setOrderType}
+          tableNumber={tableNumber}
+          setTableNumber={setTableNumber}
           cart={cart}
           onChangeQty={onChangeQty}
+          onChangeNotes={onChangeNotes}
           onRemoveItem={onRemoveItem}
           discount={discount}
           setDiscount={setDiscount}
