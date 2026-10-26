@@ -16,10 +16,11 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('admin','owner')),
+  role TEXT NOT NULL CHECK(role IN ('admin','owner','manager','cashier','waiter')),
+  manager_pin_hash TEXT,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CHECK ((role='admin' AND shop_id IS NULL) OR (role='owner' AND shop_id IS NOT NULL))
+  CHECK ((role='admin' AND shop_id IS NULL) OR (role IN ('owner','manager','cashier','waiter') AND shop_id IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -69,7 +70,11 @@ CREATE TABLE IF NOT EXISTS sales (
   bill_number TEXT NOT NULL,
   order_type TEXT NOT NULL CHECK(order_type IN ('takeaway','delivery','dining')),
   table_number TEXT,
-  kitchen_status TEXT NOT NULL DEFAULT 'pending' CHECK(kitchen_status IN ('pending', 'preparing', 'ready', 'served')),
+  kitchen_status TEXT NOT NULL DEFAULT 'pending' CHECK(kitchen_status IN ('pending', 'preparing', 'ready', 'served', 'voided')),
+  status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed', 'voided')),
+  voided_at TIMESTAMPTZ,
+  void_reason TEXT,
+  void_authorized_by UUID REFERENCES users(id),
   subtotal NUMERIC(12,2) NOT NULL,
   discount NUMERIC(12,2) NOT NULL DEFAULT 0,
   total NUMERIC(12,2) NOT NULL,
@@ -119,7 +124,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
   product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   delta_qty INTEGER NOT NULL,
-  reason TEXT NOT NULL CHECK(reason IN ('sale', 'restock', 'waste', 'spoilage', 'audit_correction')),
+  reason TEXT NOT NULL CHECK(reason IN ('sale', 'restock', 'waste', 'spoilage', 'audit_correction', 'void_restock')),
   reference_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -265,6 +270,20 @@ ALTER TABLE sale_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sale_payments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS sale_payments_tenant_isolation ON sale_payments;
 CREATE POLICY sale_payments_tenant_isolation ON sale_payments
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS audit_logs_tenant_isolation ON audit_logs;
+CREATE POLICY audit_logs_tenant_isolation ON audit_logs
   FOR ALL
   USING (
     current_setting('app.is_admin', true) = 'true'

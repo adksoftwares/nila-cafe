@@ -112,13 +112,31 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
             <button
               type="button"
               onClick={() => {
+                setEmail('manager@counterpoint.local');
+                setPassword('Manager123!');
+              }}
+            >
+              Store Manager <span>manager@counterpoint.local</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('cashier@counterpoint.local');
+                setPassword('Cashier123!');
+              }}
+            >
+              Cashier (Till Operator) <span>cashier@counterpoint.local</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 setEmail('admin@counterpoint.local');
                 setPassword('Admin123!');
               }}
             >
               Platform Admin <span>admin@counterpoint.local</span>
             </button>
-            <small>Demo Password: Owner123! or Admin123!</small>
+            <small>Demo Password: Owner123! / Manager123! / Cashier123! · Manager PIN: 8844</small>
           </div>
 
           <p className="login-legal">Secure token authentication · Multi-tenant isolated workspace</p>

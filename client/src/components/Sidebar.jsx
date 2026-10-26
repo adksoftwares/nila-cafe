@@ -95,7 +95,9 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
           <div className="avatar">{initials}</div>
           <div className="profile-text">
             <strong>{user.name}</strong>
-            <small>{admin ? 'Platform Administrator' : 'Cafe Owner'}</small>
+            <small style={{ textTransform: 'capitalize' }}>
+              {user.role === 'admin' ? 'Platform Administrator' : (user.role === 'owner' ? 'Cafe Owner' : user.role)}
+            </small>
           </div>
           <button className="icon-btn" onClick={onLogout} title="Sign out">
             <LogOut size={17} />

@@ -14,6 +14,7 @@ import ProductModal from './components/modals/ProductModal.jsx';
 import ShopModal from './components/modals/ShopModal.jsx';
 import ShiftModal from './components/modals/ShiftModal.jsx';
 import PaymentModal from './components/modals/PaymentModal.jsx';
+import VoidModal from './components/modals/VoidModal.jsx';
 
 // Pages
 import LoginScreen from './pages/LoginScreen.jsx';
@@ -56,6 +57,7 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
+  const [selectedVoidSale, setSelectedVoidSale] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null);
 
@@ -107,6 +109,18 @@ export default function App() {
       .catch(() => {});
   };
 
+  const loadSales = () => {
+    if (!token || !user) return;
+    api('/sales')
+      .then(d => {
+        if (d.sales) {
+          setSales(d.sales);
+          localStorage.setItem('pos_sales', JSON.stringify(d.sales));
+        }
+      })
+      .catch(() => {});
+  };
+
   // Load shop data / admin data / shift data
   useEffect(() => {
     if (!user) return;
@@ -124,6 +138,7 @@ export default function App() {
       .catch(() => {});
 
     loadShift();
+    loadSales();
   }, [user, token]);
 
   const categories = useMemo(
@@ -147,6 +162,12 @@ export default function App() {
           const demo =
             loginEmail === 'owner@counterpoint.local' && loginPassword === 'Owner123!'
               ? demoUser
+              : loginEmail === 'manager@counterpoint.local' && loginPassword === 'Manager123!'
+              ? { id: 'u-manager', name: 'Store Manager', email: loginEmail, role: 'manager', shop_id: 'shop-demo' }
+              : loginEmail === 'cashier@counterpoint.local' && loginPassword === 'Cashier123!'
+              ? { id: 'u-cashier', name: 'Cashier One', email: loginEmail, role: 'cashier', shop_id: 'shop-demo' }
+              : loginEmail === 'waiter@counterpoint.local' && loginPassword === 'Waiter123!'
+              ? { id: 'u-waiter', name: 'Service Staff', email: loginEmail, role: 'waiter', shop_id: 'shop-demo' }
               : loginEmail === 'admin@counterpoint.local' && loginPassword === 'Admin123!'
               ? { id: 'u-admin', name: 'System Admin', email: loginEmail, role: 'admin', shop_id: null }
               : null;
@@ -294,10 +315,33 @@ export default function App() {
       setDiscount(0);
       setPendingCheckout(null);
       loadShift();
+      loadSales();
     } catch (e) {
       flash(e.message);
     } finally {
       setCheckoutSubmitting(false);
+    }
+  };
+
+  const handleVoidSale = async ({ saleId, reason, managerPin }) => {
+    try {
+      const res = await api(`/sales/${saleId}/void`, {
+        method: 'POST',
+        body: JSON.stringify({ reason, managerPin })
+      });
+      flash('Transaction voided successfully. Stock restored.');
+      loadSales();
+      loadShift();
+      if (user?.role !== 'admin') {
+        api('/products')
+          .then(d => {
+            if (d.products?.length) setProducts(d.products);
+          })
+          .catch(() => {});
+      }
+      return res;
+    } catch (err) {
+      throw err;
     }
   };
 
@@ -474,7 +518,16 @@ export default function App() {
             />
           )}
 
-          {page === 'Sales' && <SalesPage sales={sales} />}
+          {page === 'Sales' && (
+            <SalesPage
+              sales={sales}
+              user={user}
+              onOpenVoidModal={(s) => {
+                setSelectedVoidSale(s);
+                setModal('void');
+              }}
+            />
+          )}
 
           {page === 'Reports' && (
             <ReportsPage
@@ -543,6 +596,18 @@ export default function App() {
           total={pendingCheckout.total}
           onConfirmPayment={handleConfirmPayment}
           onClose={() => setModal('')}
+        />
+      )}
+
+      {modal === 'void' && selectedVoidSale && (
+        <VoidModal
+          sale={selectedVoidSale}
+          user={user}
+          onConfirmVoid={handleVoidSale}
+          onClose={() => {
+            setModal('');
+            setSelectedVoidSale(null);
+          }}
         />
       )}
 

@@ -58,10 +58,54 @@ const demoProducts = [
   { id: 'p6', code: 'SAN001', name: 'Club Sandwich', category: 'Sandwiches', takeaway_price: 700, normal_price: 780, stock: 24, active: true }
 ];
 
-let demoSales = [];
+let demoSales = [
+  {
+    id: 'sale-demo-1',
+    bill_number: 'POS-NILA-1001',
+    order_type: 'dining',
+    table_number: 'Table 4',
+    kitchen_status: 'ready',
+    status: 'completed',
+    subtotal: 2350,
+    discount: 100,
+    total: 2250,
+    payment_method: 'cash',
+    amount_received: 2500,
+    created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+    cashier_name: 'Cashier One',
+    items: [
+      { id: 'si-1', name: 'Chicken Burger', code: 'BUR001', quantity: 2, price: 950, total: 1900, notes: 'Extra sauce' },
+      { id: 'si-2', name: 'French Fries', code: 'FRI001', quantity: 1, price: 500, total: 450, notes: 'Crispy' }
+    ],
+    payments: [{ method: 'cash', amount: 2250 }]
+  },
+  {
+    id: 'sale-demo-2',
+    bill_number: 'POS-NILA-1002',
+    order_type: 'takeaway',
+    table_number: null,
+    kitchen_status: 'preparing',
+    status: 'completed',
+    subtotal: 1500,
+    discount: 0,
+    total: 1500,
+    payment_method: 'card',
+    amount_received: 1500,
+    created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+    cashier_name: 'Demo Owner',
+    items: [
+      { id: 'si-3', name: 'Classic Pizza', code: 'PIZ001', quantity: 1, price: 1500, total: 1500, notes: 'Less spicy' }
+    ],
+    payments: [{ method: 'card', amount: 1500, reference: 'VISA-9921' }]
+  }
+];
+
 let demoUsers = [
   { id: 'u-admin', name: 'System Admin', email: 'admin@counterpoint.local', password: 'Admin123!', role: 'admin', shop_id: null, active: true },
-  { id: 'u-owner', name: 'Demo Owner', email: 'owner@counterpoint.local', password: 'Owner123!', role: 'owner', shop_id: 'shop-demo', active: true }
+  { id: 'u-owner', name: 'Demo Owner', email: 'owner@counterpoint.local', password: 'Owner123!', role: 'owner', shop_id: 'shop-demo', manager_pin: '8844', active: true },
+  { id: 'u-manager', name: 'Store Manager', email: 'manager@counterpoint.local', password: 'Manager123!', role: 'manager', shop_id: 'shop-demo', manager_pin: '8844', active: true },
+  { id: 'u-cashier', name: 'Cashier One', email: 'cashier@counterpoint.local', password: 'Cashier123!', role: 'cashier', shop_id: 'shop-demo', active: true },
+  { id: 'u-waiter', name: 'Service Staff', email: 'waiter@counterpoint.local', password: 'Waiter123!', role: 'waiter', shop_id: 'shop-demo', active: true }
 ];
 let demoShops = [
   { id: 'shop-demo', name: 'The Daily Counter', email: 'owner@counterpoint.local', phone: '+94 77 123 4567', address: 'Colombo, Sri Lanka', active: true }
@@ -257,7 +301,7 @@ app.get('/api/products', auth, async (req, res) => {
 });
 
 // Products: Create (Fixes Admin Bug)
-app.post('/api/products', auth, roles('owner', 'admin'), async (req, res) => {
+app.post('/api/products', auth, roles('owner', 'admin', 'manager'), async (req, res) => {
   const { code, name, category = 'General', takeaway_price, normal_price, stock = 0 } = req.body;
   const targetShopId = req.user.role === 'admin' ? (req.body.shopId || req.query.shopId) : req.user.shop_id;
 
@@ -305,7 +349,7 @@ app.get('/api/reports/summary', auth, async (req, res) => {
             COALESCE(SUM(total), 0)::float AS sales,
             COALESCE(SUM(discount), 0)::float AS discounts 
           FROM sales 
-          WHERE created_at >= date_trunc('day', NOW())
+          WHERE created_at >= date_trunc('day', NOW()) AND status != 'voided'
         `);
         const p = await query('SELECT COUNT(*)::int AS products FROM products WHERE active = true');
         return res.json({ ...rows[0], products: p[0].products });
@@ -317,17 +361,18 @@ app.get('/api/reports/summary', auth, async (req, res) => {
           COALESCE(SUM(total), 0)::float AS sales,
           COALESCE(SUM(discount), 0)::float AS discounts 
         FROM sales 
-        WHERE shop_id = $1 AND created_at >= date_trunc('day', NOW())
+        WHERE shop_id = $1 AND created_at >= date_trunc('day', NOW()) AND status != 'voided'
       `, [targetShopId]);
 
       const p = await query('SELECT COUNT(*)::int AS products FROM products WHERE shop_id = $1 AND active = true', [targetShopId]);
       return res.json({ ...rows[0], products: p[0].products });
     }
 
+    const validDemoSales = demoSales.filter(s => s.status !== 'voided');
     res.json({
-      bills: demoSales.length,
-      sales: demoSales.reduce((s, x) => s + x.total, 0),
-      discounts: demoSales.reduce((s, x) => s + x.discount, 0),
+      bills: validDemoSales.length,
+      sales: validDemoSales.reduce((s, x) => s + x.total, 0),
+      discounts: validDemoSales.reduce((s, x) => s + x.discount, 0),
       products: demoProducts.length
     });
   } catch (e) {
@@ -402,7 +447,7 @@ app.get('/api/shifts/current', auth, async (req, res) => {
       const shift = rows[0];
 
       const salesAgg = await query(
-        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1",
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1 AND status != 'voided'",
         [shift.id],
         req.user
       );
@@ -436,15 +481,16 @@ app.get('/api/shifts/current', auth, async (req, res) => {
     if (!demoShift || demoShift.status !== 'open') {
       return res.json({ shift: null, summary: null });
     }
-    const cashSales = demoSales.reduce((sum, s) => sum + s.total, 0);
-    const discounts = demoSales.reduce((sum, s) => sum + s.discount, 0);
+    const validShiftSales = demoSales.filter(s => s.status !== 'voided');
+    const cashSales = validShiftSales.reduce((sum, s) => sum + s.total, 0);
+    const discounts = validShiftSales.reduce((sum, s) => sum + s.discount, 0);
     const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
     const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
 
     res.json({
       shift: demoShift,
       summary: {
-        bills: demoSales.length,
+        bills: validShiftSales.length,
         cashSales,
         discounts,
         netAdjustments,
@@ -458,7 +504,7 @@ app.get('/api/shifts/current', auth, async (req, res) => {
 });
 
 // Shifts: Open Shift (Entering Opening Float)
-app.post('/api/shifts/open', auth, roles('owner'), async (req, res) => {
+app.post('/api/shifts/open', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
   const { openingFloat = 0, notes = '' } = req.body;
   const floatVal = Math.max(0, Number(openingFloat) || 0);
 
@@ -506,7 +552,7 @@ app.post('/api/shifts/open', auth, roles('owner'), async (req, res) => {
 });
 
 // Shifts: Petty Cash In / Out (Adjustments)
-app.post('/api/shifts/adjustment', auth, roles('owner'), async (req, res) => {
+app.post('/api/shifts/adjustment', auth, roles('owner', 'manager'), async (req, res) => {
   const { type, amount, reason } = req.body;
   if (!['cash_in', 'cash_out'].includes(type) || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !reason) {
     return res.status(400).json({ error: 'Provide valid adjustment type, positive amount, and reason.' });
@@ -551,7 +597,7 @@ app.post('/api/shifts/adjustment', auth, roles('owner'), async (req, res) => {
 });
 
 // Shifts: Close Shift & Generate Official Z-Report
-app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
+app.post('/api/shifts/close', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
   const { actualCash = 0, notes = '' } = req.body;
   const counted = Math.max(0, Number(actualCash) || 0);
 
@@ -568,7 +614,7 @@ app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
       const shift = active[0];
 
       const salesAgg = await query(
-        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1",
+        "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts FROM sales WHERE shift_id = $1 AND status != 'voided'",
         [shift.id],
         req.user
       );
@@ -616,8 +662,9 @@ app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
       return res.status(400).json({ error: 'No open shift to close.' });
     }
 
-    const cashSales = demoSales.reduce((sum, s) => sum + s.total, 0);
-    const discounts = demoSales.reduce((sum, s) => sum + s.discount, 0);
+    const validCloseSales = demoSales.filter(s => s.status !== 'voided');
+    const cashSales = validCloseSales.reduce((sum, s) => sum + s.total, 0);
+    const discounts = validCloseSales.reduce((sum, s) => sum + s.discount, 0);
     const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
     const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
     const difference = Math.round((counted - expectedCash) * 100) / 100;
@@ -645,7 +692,7 @@ app.post('/api/shifts/close', auth, roles('owner'), async (req, res) => {
       expectedCash,
       actualCountedCash: counted,
       variance: difference,
-      billsCount: demoSales.length
+      billsCount: validCloseSales.length
     };
 
     res.json({ shift: demoShift, zReport });
@@ -706,7 +753,7 @@ app.get('/api/kds/orders', auth, async (req, res) => {
           )) FILTER (WHERE si.id IS NOT NULL), '[]') AS items
         FROM sales s
         LEFT JOIN sale_items si ON si.sale_id = s.id
-        WHERE s.shop_id = $1 AND s.kitchen_status != 'served'
+        WHERE s.shop_id = $1 AND s.kitchen_status NOT IN ('served', 'voided') AND s.status != 'voided'
         GROUP BY s.id
         ORDER BY s.created_at ASC`,
         [req.user.shop_id],
@@ -717,7 +764,7 @@ app.get('/api/kds/orders', auth, async (req, res) => {
 
     // Demo Mode Orders
     const active = demoSales
-      .filter(s => s.kitchen_status !== 'served')
+      .filter(s => s.kitchen_status !== 'served' && s.kitchen_status !== 'voided' && s.status !== 'voided')
       .map(s => ({
         id: s.id,
         bill_number: s.bill_number,
@@ -734,7 +781,7 @@ app.get('/api/kds/orders', auth, async (req, res) => {
 });
 
 // KDS: Update Kitchen Order Status (preparing -> ready -> served)
-app.patch('/api/kds/orders/:id/status', auth, roles('owner'), async (req, res) => {
+app.patch('/api/kds/orders/:id/status', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
   const { status } = req.body;
   const orderId = req.params.id;
 
@@ -774,7 +821,7 @@ app.patch('/api/kds/orders/:id/status', auth, roles('owner'), async (req, res) =
 });
 
 // Sales: Checkout & Inventory Management (Deadlock-Free Batch Query, Idempotent, Multi-Payment & Split Bill)
-app.post('/api/sales', auth, roles('owner'), async (req, res) => {
+app.post('/api/sales', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
   const {
     orderType,
     tableNumber = null,
@@ -815,7 +862,85 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
   }
 
   if (!pool) {
-    return res.status(501).json({ error: 'Saving sales requires PostgreSQL. The demo screen does not save sales.' });
+    // Process demo checkout in-memory
+    const lines = [];
+    let subtotal = 0;
+    for (const item of items) {
+      const p = demoProducts.find(x => x.id === item.productId) || { name: 'Custom Product', code: 'CUST', takeaway_price: 500, normal_price: 550, stock: 50 };
+      const q = Math.max(1, Number(item.quantity) || 1);
+      const price = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+      const lineSub = Math.round(price * q * 100) / 100;
+      subtotal = Math.round((subtotal + lineSub) * 100) / 100;
+      p.stock = Math.max(0, p.stock - q);
+      lines.push({
+        name: p.name,
+        code: p.code,
+        quantity: q,
+        price,
+        discount: 0,
+        notes: item.notes || '',
+        total: lineSub
+      });
+    }
+
+    const billDiscount = Math.round(Math.min(subtotal, Number(discount) || 0) * 100) / 100;
+    const total = Math.round(Math.max(0, subtotal - billDiscount) * 100) / 100;
+
+    const paymentList = Array.isArray(payments) && payments.length > 0
+      ? payments.map(p => ({ method: p.method || 'cash', amount: Number(p.amount), reference: p.reference || null }))
+      : [{ method: paymentMethod || 'cash', amount: total, reference: null }];
+
+    const bill = 'POS-' + Date.now().toString(36).toUpperCase() + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
+
+    const demoSale = {
+      id: 'sale-demo-' + Date.now(),
+      bill_number: bill,
+      order_type: orderType,
+      table_number: orderType === 'dining' ? (tableNumber || 'Table 1') : null,
+      kitchen_status: 'pending',
+      status: 'completed',
+      subtotal,
+      discount: billDiscount,
+      total,
+      payment_method: paymentList.length > 1 ? 'mixed' : paymentList[0].method,
+      amount_received: Number(amountReceived) || total,
+      payments: paymentList,
+      created_at: new Date().toISOString(),
+      cashier_name: req.user.name || 'Demo Cashier',
+      items: lines
+    };
+
+    demoSales.unshift(demoSale);
+
+    broadcastKDS(req.user.shop_id, 'order:new', {
+      id: demoSale.id,
+      bill_number: demoSale.bill_number,
+      order_type: demoSale.order_type,
+      table_number: demoSale.table_number,
+      kitchen_status: 'pending',
+      created_at: demoSale.created_at,
+      items: lines.map(l => ({
+        name: l.name,
+        code: l.code,
+        qty: l.quantity,
+        notes: l.notes
+      }))
+    });
+
+    const responsePayload = {
+      sale: demoSale,
+      items: lines,
+      payments: paymentList
+    };
+
+    if (idempotencyKey) {
+      demoIdempotencyCache.set(`${req.user.shop_id}:${idempotencyKey}`, {
+        code: 201,
+        body: responsePayload
+      });
+    }
+
+    return res.status(201).json(responsePayload);
   }
 
   const client = await pool.connect();
@@ -1016,6 +1141,229 @@ app.post('/api/sales', auth, roles('owner'), async (req, res) => {
     res.status(400).json({ error: e.message });
   } finally {
     client.release();
+  }
+});
+
+// Sales: List Order History (with void status, cashier, and line items)
+app.get('/api/sales', auth, roles('admin', 'owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
+  try {
+    if (pool) {
+      const targetShopId = req.user.role === 'admin' ? (req.query.shopId || null) : req.user.shop_id;
+      const args = targetShopId ? [targetShopId] : [];
+      const shopFilter = targetShopId ? 'WHERE s.shop_id = $1' : '';
+
+      const rows = await query(
+        `SELECT s.id, s.bill_number, s.order_type, s.table_number, s.kitchen_status, s.status,
+                s.subtotal, s.discount, s.total, s.payment_method, s.amount_received,
+                s.voided_at, s.void_reason, s.created_at,
+                u.name AS cashier_name,
+                mgr.name AS void_authorized_by_name,
+                COALESCE(json_agg(json_build_object(
+                  'id', si.id,
+                  'name', si.product_name,
+                  'code', si.product_code,
+                  'qty', si.quantity,
+                  'price', si.unit_price,
+                  'discount', si.discount,
+                  'notes', si.notes,
+                  'total', si.line_total
+                )) FILTER (WHERE si.id IS NOT NULL), '[]') AS items
+         FROM sales s
+         LEFT JOIN users u ON u.id = s.user_id
+         LEFT JOIN users mgr ON mgr.id = s.void_authorized_by
+         LEFT JOIN sale_items si ON si.sale_id = s.id
+         ${shopFilter}
+         GROUP BY s.id, u.name, mgr.name
+         ORDER BY s.created_at DESC
+         LIMIT 100`,
+        args,
+        req.user
+      );
+      return res.json({ sales: rows });
+    }
+
+    res.json({ sales: demoSales });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Sales: Manager Void Authorization & Inventory Restock
+app.post('/api/sales/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
+  const saleId = req.params.id;
+  const { reason, managerPin } = req.body;
+
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ error: 'A reason for voiding this transaction is required.' });
+  }
+
+  const cleanReason = String(reason).trim();
+  const isDirectManager = ['owner', 'manager'].includes(req.user.role);
+
+  // If cashier or waiter, verify manager security PIN
+  let authorizer = null;
+  if (!isDirectManager) {
+    const providedPin = String(managerPin || '').trim();
+    if (!providedPin) {
+      return res.status(403).json({ error: 'Manager Security PIN is required to authorize void.' });
+    }
+
+    if (pool) {
+      const managers = await query(
+        "SELECT id, name, manager_pin_hash FROM users WHERE shop_id = $1 AND role IN ('owner', 'manager') AND active = true",
+        [req.user.shop_id]
+      );
+      let pinValid = false;
+      for (const m of managers) {
+        if (m.manager_pin_hash) {
+          if (await bcrypt.compare(providedPin, m.manager_pin_hash)) {
+            pinValid = true;
+            authorizer = m;
+            break;
+          }
+        } else if (providedPin === '8844') {
+          pinValid = true;
+          authorizer = m;
+          break;
+        }
+      }
+      if (!pinValid) {
+        return res.status(403).json({ error: 'Invalid Manager PIN. Authorization rejected.' });
+      }
+    } else {
+      if (providedPin !== '8844') {
+        return res.status(403).json({ error: 'Invalid Manager PIN. Use default PIN 8844.' });
+      }
+      authorizer = { id: 'u-manager', name: 'Store Manager' };
+    }
+  } else {
+    authorizer = { id: req.user.sub, name: req.user.name };
+  }
+
+  try {
+    if (pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.current_shop_id', $1, true)", [req.user.shop_id]);
+
+        const saleRows = (await client.query(
+          'SELECT * FROM sales WHERE id = $1 AND shop_id = $2 FOR UPDATE',
+          [saleId, req.user.shop_id]
+        )).rows;
+
+        if (!saleRows.length) {
+          throw new Error('Transaction not found.');
+        }
+
+        const sale = saleRows[0];
+        if (sale.status === 'voided') {
+          throw new Error('Transaction has already been voided.');
+        }
+
+        const updatedSale = (await client.query(
+          `UPDATE sales 
+           SET status = 'voided', 
+               kitchen_status = 'voided',
+               voided_at = NOW(), 
+               void_reason = $1, 
+               void_authorized_by = $2 
+           WHERE id = $3 
+           RETURNING *`,
+          [cleanReason, authorizer?.id || req.user.sub, sale.id]
+        )).rows[0];
+
+        const saleItems = (await client.query(
+          'SELECT * FROM sale_items WHERE sale_id = $1',
+          [sale.id]
+        )).rows;
+
+        for (const item of saleItems) {
+          await client.query(
+            'INSERT INTO stock_movements(shop_id, product_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+            [req.user.shop_id, item.product_id, item.quantity, 'void_restock', sale.bill_number]
+          );
+
+          await client.query(
+            'UPDATE products SET stock = stock + $1 WHERE id = $2',
+            [item.quantity, item.product_id]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO audit_logs(user_id, shop_id, action, details) 
+           VALUES($1, $2, 'SALE_VOID', $3)`,
+          [
+            req.user.sub,
+            req.user.shop_id,
+            JSON.stringify({
+              saleId: sale.id,
+              billNumber: sale.bill_number,
+              total: sale.total,
+              reason: cleanReason,
+              authorizedById: authorizer?.id,
+              authorizedByName: authorizer?.name,
+              initiatedByRole: req.user.role
+            })
+          ]
+        );
+
+        await client.query('COMMIT');
+
+        broadcastKDS(req.user.shop_id, 'order:status', {
+          orderId: sale.id,
+          kitchen_status: 'voided'
+        });
+
+        return res.json({
+          success: true,
+          message: 'Sale voided successfully. Stock restored.',
+          sale: updatedSale
+        });
+      } catch (err) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: err.message });
+      } finally {
+        client.release();
+      }
+    }
+
+    // Demo Mode Void
+    const sale = demoSales.find(s => String(s.id) === String(saleId) || s.bill_number === saleId);
+    if (!sale) {
+      return res.status(404).json({ error: 'Transaction not found in records.' });
+    }
+    if (sale.status === 'voided') {
+      return res.status(400).json({ error: 'Transaction has already been voided.' });
+    }
+
+    sale.status = 'voided';
+    sale.kitchen_status = 'voided';
+    sale.voided_at = new Date().toISOString();
+    sale.void_reason = cleanReason;
+    sale.void_authorized_by_name = authorizer?.name || 'Manager';
+
+    if (Array.isArray(sale.items)) {
+      for (const item of sale.items) {
+        const prod = demoProducts.find(p => p.name === item.name || p.code === item.code || p.id === item.id);
+        if (prod) {
+          prod.stock += (item.qty || item.quantity || 1);
+        }
+      }
+    }
+
+    broadcastKDS(req.user.shop_id, 'order:status', {
+      orderId: sale.id,
+      kitchen_status: 'voided'
+    });
+
+    res.json({
+      success: true,
+      message: 'Sale voided successfully. Stock restored.',
+      sale
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

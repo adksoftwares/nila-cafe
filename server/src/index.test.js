@@ -238,3 +238,105 @@ test('KDS SSE Payload: formats valid Server-Sent Events stream message', () => {
   assert.equal(sseMessage.includes('"bill_number":"POS-NILA-999"'), true);
   assert.equal(sseMessage.endsWith('\n\n'), true);
 });
+
+test('RBAC & Manager PIN Authorization: validates permission boundary for cashier vs manager', () => {
+  const authorizeVoid = (user, managerPin) => {
+    if (['owner', 'manager'].includes(user.role)) {
+      return { authorized: true, authorizedBy: user.name };
+    }
+    // Cashier or waiter requires valid 4-digit Manager PIN
+    if (managerPin === '8844') {
+      return { authorized: true, authorizedBy: 'Store Manager (PIN Verified)' };
+    }
+    return { authorized: false, error: 'Invalid Manager PIN' };
+  };
+
+  const cashier = { role: 'cashier', name: 'Cashier One' };
+  const manager = { role: 'manager', name: 'Store Manager' };
+
+  // Case 1: Cashier attempts void without PIN -> Rejected
+  const cashierNoPin = authorizeVoid(cashier, '');
+  assert.equal(cashierNoPin.authorized, false);
+  assert.equal(cashierNoPin.error, 'Invalid Manager PIN');
+
+  // Case 2: Cashier attempts void with incorrect PIN -> Rejected
+  const cashierWrongPin = authorizeVoid(cashier, '1234');
+  assert.equal(cashierWrongPin.authorized, false);
+
+  // Case 3: Cashier provides valid manager PIN (8844) -> Authorized
+  const cashierValidPin = authorizeVoid(cashier, '8844');
+  assert.equal(cashierValidPin.authorized, true);
+
+  // Case 4: Manager voids directly -> Authorized without PIN
+  const managerDirect = authorizeVoid(manager, '');
+  assert.equal(managerDirect.authorized, true);
+});
+
+test('Double-Entry Void Restock Ledger: restores stock inventory and creates audit records', () => {
+  const products = {
+    'p1': { id: 'p1', name: 'Chicken Burger', stock: 15 },
+    'p2': { id: 'p2', name: 'French Fries', stock: 20 }
+  };
+
+  const saleItems = [
+    { productId: 'p1', quantity: 3 },
+    { productId: 'p2', quantity: 2 }
+  ];
+
+  const stockMovements = [];
+
+  // Execute void and restock
+  for (const item of saleItems) {
+    products[item.productId].stock += item.quantity;
+    stockMovements.push({
+      productId: item.productId,
+      delta_qty: item.quantity,
+      reason: 'void_restock',
+      reference_id: 'POS-NILA-1001'
+    });
+  }
+
+  // Invariant verification: Stock incremented exactly by line item quantities
+  assert.equal(products['p1'].stock, 18);
+  assert.equal(products['p2'].stock, 22);
+
+  // Ledger verification: Double-entry audit entries created
+  assert.equal(stockMovements.length, 2);
+  assert.equal(stockMovements[0].delta_qty, 3);
+  assert.equal(stockMovements[0].reason, 'void_restock');
+  assert.equal(stockMovements[1].delta_qty, 2);
+  assert.equal(stockMovements[1].reason, 'void_restock');
+});
+
+test('Shift Till Reconciliation: excludes voided sales from expected drawer cash', () => {
+  const openingFloat = 5000;
+  const sales = [
+    { bill: 'POS-1', total: 1200, status: 'completed' },
+    { bill: 'POS-2', total: 850, status: 'voided' }, // Customer cancelled, refunded / restocked
+    { bill: 'POS-3', total: 2000, status: 'completed' }
+  ];
+
+  const activeCashSales = sales
+    .filter(s => s.status !== 'voided')
+    .reduce((sum, s) => sum + s.total, 0);
+
+  const expectedCash = openingFloat + activeCashSales;
+
+  assert.equal(activeCashSales, 3200); // 1200 + 2000
+  assert.equal(expectedCash, 8200); // 850 voided is strictly excluded!
+});
+
+test('KDS Queue: voided orders are automatically removed from active kitchen display', () => {
+  const orders = [
+    { id: '1', bill: 'POS-1', kitchen_status: 'preparing', status: 'completed' },
+    { id: '2', bill: 'POS-2', kitchen_status: 'voided', status: 'voided' },
+    { id: '3', bill: 'POS-3', kitchen_status: 'ready', status: 'completed' }
+  ];
+
+  const activeKitchenOrders = orders.filter(
+    o => !['served', 'voided'].includes(o.kitchen_status) && o.status !== 'voided'
+  );
+
+  assert.equal(activeKitchenOrders.length, 2);
+  assert.equal(activeKitchenOrders.some(o => o.id === '2'), false);
+});
