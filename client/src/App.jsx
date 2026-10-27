@@ -514,9 +514,11 @@ function MainPOSApp({
             <ProductsPage
               products={products}
               categories={categories}
+              modifiers={modifiers}
               search={search}
               setSearch={setSearch}
               onOpenAddProduct={() => setModal('product')}
+              onNavigateToBOM={() => setPage('Ingredients & BOM')}
             />
           )}
 

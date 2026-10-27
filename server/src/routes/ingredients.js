@@ -236,4 +236,32 @@ router.post('/recipes', auth, roles('owner', 'manager'), async (req, res) => {
   }
 });
 
+// Recipes / BOM: Delete Recipe Item from BOM
+router.delete('/recipes/:id', auth, roles('owner', 'manager'), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (pool) {
+      const result = await query(
+        'DELETE FROM recipe_items WHERE id = $1 AND shop_id = $2 RETURNING id',
+        [id, req.user.shop_id],
+        req.user
+      );
+      if (!result.length) {
+        return res.status(404).json({ error: 'Recipe item not found.' });
+      }
+      return res.json({ success: true, message: 'Recipe item removed from BOM.' });
+    }
+
+    const idx = demoRecipes.findIndex(r => r.id === id && r.shop_id === req.user.shop_id);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Recipe item not found.' });
+    }
+    demoRecipes.splice(idx, 1);
+    res.json({ success: true, message: 'Recipe item removed from BOM.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

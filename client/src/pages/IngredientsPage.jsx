@@ -8,15 +8,21 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  Boxes
+  Boxes,
+  Sliders,
+  Trash2,
+  Edit3,
+  DollarSign
 } from 'lucide-react';
 import { money } from '../utils/formatters.js';
+import ModifierGroupModal from '../components/modals/ModifierGroupModal.jsx';
 
 export default function IngredientsPage({ api, onFlash }) {
-  const [activeTab, setActiveTab] = useState('inventory'); // 'inventory' | 'recipes'
+  const [activeTab, setActiveTab] = useState('inventory'); // 'inventory' | 'recipes' | 'modifiers'
   const [ingredients, setIngredients] = useState([]);
   const [recipes, setRecipes] = useState([]);
   const [products, setProducts] = useState([]);
+  const [modifiers, setModifiers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // New Ingredient Form state
@@ -39,22 +45,28 @@ export default function IngredientsPage({ api, onFlash }) {
   const [recipeQtyRequired, setRecipeQtyRequired] = useState('');
   const [submittingRecipe, setSubmittingRecipe] = useState(false);
 
+  // Modifier Modal state
+  const [showModifierModal, setShowModifierModal] = useState(false);
+  const [editingModifier, setEditingModifier] = useState(null);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [ingRes, recRes, prodRes] = await Promise.all([
+      const [ingRes, recRes, prodRes, modRes] = await Promise.all([
         api('/ingredients'),
         api('/ingredients/recipes'),
-        api('/products')
+        api('/products'),
+        api('/modifiers')
       ]);
       setIngredients(ingRes.ingredients || []);
       setRecipes(recRes.recipes || []);
       setProducts(prodRes.products || []);
+      setModifiers(modRes.modifiers || []);
       if (prodRes.products?.length && !selectedProductId) {
         setSelectedProductId(prodRes.products[0].id);
       }
     } catch (err) {
-      onFlash?.(err.message || 'Failed to load ingredients', 'error');
+      onFlash?.(err.message || 'Failed to load inventory data', 'error');
     } finally {
       setLoading(false);
     }
@@ -143,7 +155,6 @@ export default function IngredientsPage({ api, onFlash }) {
       if (res.recipe) {
         onFlash?.('Recipe BOM item saved successfully', 'success');
         setRecipeQtyRequired('');
-        // Reload recipes to display updated join names
         const recRes = await api('/ingredients/recipes');
         setRecipes(recRes.recipes || []);
       }
@@ -154,45 +165,111 @@ export default function IngredientsPage({ api, onFlash }) {
     }
   };
 
+  const handleDeleteRecipe = async (recipeId) => {
+    try {
+      const res = await api(`/ingredients/recipes/${recipeId}`, { method: 'DELETE' });
+      if (res.success) {
+        setRecipes(prev => prev.filter(r => r.id !== recipeId));
+        onFlash?.('Ingredient removed from BOM', 'success');
+      }
+    } catch (err) {
+      onFlash?.(err.message || 'Failed to remove recipe item', 'error');
+    }
+  };
+
+  const handleSaveModifier = async (data) => {
+    if (data.id) {
+      const res = await api(`/modifiers/${data.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data)
+      });
+      if (res.success) {
+        setModifiers(prev => prev.map(m => (m.id === data.id ? res.modifier : m)));
+        onFlash?.('Modifier group updated successfully', 'success');
+      }
+    } else {
+      const res = await api('/modifiers', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      if (res.success) {
+        setModifiers(prev => [...prev, res.modifier]);
+        onFlash?.('Modifier group created successfully', 'success');
+      }
+    }
+  };
+
+  const handleDeleteModifier = async (modifierId) => {
+    if (!window.confirm('Are you sure you want to delete this modifier group?')) return;
+    try {
+      const res = await api(`/modifiers/${modifierId}`, { method: 'DELETE' });
+      if (res.success) {
+        setModifiers(prev => prev.filter(m => m.id !== modifierId));
+        onFlash?.('Modifier group deleted', 'success');
+      }
+    } catch (err) {
+      onFlash?.(err.message || 'Failed to delete modifier group', 'error');
+    }
+  };
+
   const lowStockIngredients = ingredients.filter(i => Number(i.stock) <= Number(i.min_stock_alert));
   const productFilteredRecipes = recipes.filter(r => r.product_id === selectedProductId);
+  const selectedProduct = products.find(p => p.id === selectedProductId);
+
+  // Compute total BOM raw cost for selected product
+  const totalBOMCost = productFilteredRecipes.reduce((sum, r) => {
+    const ing = ingredients.find(i => i.id === r.ingredient_id);
+    const unitCost = ing ? Number(ing.cost_per_unit || 0) : 0;
+    return sum + (Number(r.quantity_required) * unitCost);
+  }, 0);
 
   return (
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">INVENTORY & BILL OF MATERIALS (BOM)</span>
-          <h1>Raw Ingredients & Recipes</h1>
-          <p>Track raw materials, automate recipe depletion on sales, and manage low-stock alerts.</p>
+          <span className="eyebrow">INVENTORY, RECIPES & MODIFIERS</span>
+          <h1>Raw Inventory & Recipe Management</h1>
+          <p>Track raw materials, link bill of materials (BOM), and configure product modifier add-ons.</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button
+            type="button"
             className={activeTab === 'inventory' ? 'primary-btn' : 'secondary-btn'}
             onClick={() => setActiveTab('inventory')}
           >
             <Boxes size={16} /> Raw Inventory
           </button>
           <button
+            type="button"
             className={activeTab === 'recipes' ? 'primary-btn' : 'secondary-btn'}
             onClick={() => setActiveTab('recipes')}
           >
             <Layers size={16} /> Recipe (BOM)
           </button>
+          <button
+            type="button"
+            className={activeTab === 'modifiers' ? 'primary-btn' : 'secondary-btn'}
+            onClick={() => setActiveTab('modifiers')}
+          >
+            <Sliders size={16} /> Modifiers & Add-Ons
+          </button>
         </div>
       </div>
 
       {/* Low Stock Warning Banner */}
-      {lowStockIngredients.length > 0 && (
-        <div style={{
-          background: '#fffbeb',
-          border: '1px solid #fde68a',
-          padding: '12px 18px',
-          borderRadius: 10,
-          marginBottom: 20,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12
-        }}>
+      {lowStockIngredients.length > 0 && activeTab === 'inventory' && (
+        <div
+          style={{
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            padding: '12px 18px',
+            borderRadius: 10,
+            marginBottom: 20,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12
+          }}
+        >
           <AlertTriangle color="#d97706" size={22} />
           <div>
             <strong style={{ color: '#92400e', fontSize: 13 }}>Low Stock Alert:</strong>
@@ -203,37 +280,42 @@ export default function IngredientsPage({ api, onFlash }) {
         </div>
       )}
 
-      {activeTab === 'inventory' ? (
+      {/* ================= TAB 1: RAW INVENTORY ================= */}
+      {activeTab === 'inventory' && (
         <div className="table-card">
-          <div className="table-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="table-top">
             <div>
-              <h3>Ingredients Stock List</h3>
-              <span className="muted">{ingredients.length} items tracked for recipe depletion</span>
+              <h3>Warehouse Raw Ingredients</h3>
+              <span className="muted">Live stock levels linked to recipe auto-depletion</span>
             </div>
             <button
               className="primary-btn small"
               onClick={() => setShowAddIng(!showAddIng)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              <Plus size={15} /> {showAddIng ? 'Close Form' : 'New Ingredient'}
+              <Plus size={15} /> {showAddIng ? 'Cancel' : 'New Ingredient'}
             </button>
           </div>
 
           {/* New Ingredient Form */}
           {showAddIng && (
-            <form onSubmit={handleCreateIngredient} style={{
-              padding: '16px 20px',
-              background: '#f8fafd',
-              borderBottom: '1px solid var(--line)',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr)) 100px',
-              gap: 12,
-              alignItems: 'flex-end'
-            }}>
+            <form
+              onSubmit={handleCreateIngredient}
+              style={{
+                padding: '14px 18px',
+                background: '#f8fafd',
+                borderBottom: '1px solid var(--line)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr)) 100px',
+                gap: 12,
+                alignItems: 'flex-end'
+              }}
+            >
               <div>
-                <label style={{ fontSize: 11, fontWeight: 600 }}>Name:</label>
+                <label style={{ fontSize: 11, fontWeight: 600 }}>Name: *</label>
                 <input
                   type="text"
-                  placeholder="e.g. Fresh Milk"
+                  placeholder="e.g. Arabica Coffee Beans"
                   value={ingName}
                   onChange={e => setIngName(e.target.value)}
                   required
@@ -247,19 +329,20 @@ export default function IngredientsPage({ api, onFlash }) {
                   onChange={e => setIngUnit(e.target.value)}
                   style={{ width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #cbd5e1' }}
                 >
-                  <option value="pcs">pcs (Pieces)</option>
-                  <option value="g">g (Grams)</option>
-                  <option value="ml">ml (Milliliters)</option>
-                  <option value="kg">kg (Kilograms)</option>
-                  <option value="l">l (Liters)</option>
+                  <option value="pcs">Pieces (pcs)</option>
+                  <option value="g">Grams (g)</option>
+                  <option value="kg">Kilograms (kg)</option>
+                  <option value="ml">Milliliters (ml)</option>
+                  <option value="L">Liters (L)</option>
+                  <option value="shots">Shots</option>
+                  <option value="slices">Slices</option>
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 600 }}>Initial Stock:</label>
+                <label style={{ fontSize: 11, fontWeight: 600 }}>Opening Stock:</label>
                 <input
                   type="number"
                   step="any"
-                  min="0"
                   placeholder="0"
                   value={ingStock}
                   onChange={e => setIngStock(e.target.value)}
@@ -271,19 +354,18 @@ export default function IngredientsPage({ api, onFlash }) {
                 <input
                   type="number"
                   step="any"
-                  min="0"
+                  placeholder="10"
                   value={ingMinAlert}
                   onChange={e => setIngMinAlert(e.target.value)}
                   style={{ width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #cbd5e1' }}
                 />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 600 }}>Cost/Unit (LKR):</label>
+                <label style={{ fontSize: 11, fontWeight: 600 }}>Cost / Unit (LKR):</label>
                 <input
                   type="number"
                   step="any"
-                  min="0"
-                  placeholder="0.00"
+                  placeholder="0"
                   value={ingCost}
                   onChange={e => setIngCost(e.target.value)}
                   style={{ width: '100%', padding: '6px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #cbd5e1' }}
@@ -366,6 +448,7 @@ export default function IngredientsPage({ api, onFlash }) {
                           </form>
                         ) : (
                           <button
+                            type="button"
                             className="secondary-btn small"
                             onClick={() => {
                               setRestockingId(ing.id);
@@ -384,8 +467,10 @@ export default function IngredientsPage({ api, onFlash }) {
             </table>
           </div>
         </div>
-      ) : (
-        /* Bill of Materials (BOM) Tab */
+      )}
+
+      {/* ================= TAB 2: RECIPE (BOM) ================= */}
+      {activeTab === 'recipes' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 20 }}>
           {/* Products Selector */}
           <div className="table-card" style={{ padding: 16 }}>
@@ -398,12 +483,13 @@ export default function IngredientsPage({ api, onFlash }) {
                 return (
                   <button
                     key={p.id}
+                    type="button"
                     onClick={() => setSelectedProductId(p.id)}
                     style={{
                       textAlign: 'left',
                       padding: '10px 12px',
                       borderRadius: 8,
-                      border: isSelected ? '2px solid var(--accent)' : '1px solid #e2e8f0',
+                      border: isSelected ? '2px solid var(--blue)' : '1px solid #e2e8f0',
                       background: isSelected ? '#eff6ff' : '#fff',
                       cursor: 'pointer',
                       display: 'flex',
@@ -417,7 +503,14 @@ export default function IngredientsPage({ api, onFlash }) {
                       </strong>
                       <span style={{ fontSize: 11, color: '#64748b' }}>Code: {p.code}</span>
                     </div>
-                    <span className="pill" style={{ fontSize: 10, background: recCount > 0 ? '#e0f2fe' : '#f1f5f9', color: recCount > 0 ? '#0369a1' : '#64748b' }}>
+                    <span
+                      className="pill"
+                      style={{
+                        fontSize: 10,
+                        background: recCount > 0 ? '#e0f2fe' : '#f1f5f9',
+                        color: recCount > 0 ? '#0369a1' : '#64748b'
+                      }}
+                    >
                       {recCount} {recCount === 1 ? 'ingredient' : 'ingredients'}
                     </span>
                   </button>
@@ -428,25 +521,35 @@ export default function IngredientsPage({ api, onFlash }) {
 
           {/* Product Recipe BOM Inspector & Assignment */}
           <div className="table-card">
-            <div className="table-top">
+            <div className="table-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3>Recipe Breakdown (BOM)</h3>
+                <h3>Recipe Breakdown (BOM) for {selectedProduct?.name || 'Item'}</h3>
                 <span className="muted">
                   Auto-depleted from inventory whenever this item is ordered
                 </span>
               </div>
+              {selectedProduct && (
+                <div style={{ textAlign: 'right', fontSize: '11px', color: '#475569' }}>
+                  <span>Est. BOM Cost: <strong style={{ color: '#0f172a' }}>{money(totalBOMCost)}</strong></span>
+                  <span style={{ margin: '0 6px' }}>|</span>
+                  <span>Selling Price: <strong style={{ color: '#16a34a' }}>{money(selectedProduct.takeaway_price)}</strong></span>
+                </div>
+              )}
             </div>
 
             {/* Add Recipe Item Form */}
-            <form onSubmit={handleCreateRecipe} style={{
-              padding: '14px 18px',
-              background: '#f8fafd',
-              borderBottom: '1px solid var(--line)',
-              display: 'grid',
-              gridTemplateColumns: '2fr 1fr 100px',
-              gap: 12,
-              alignItems: 'flex-end'
-            }}>
+            <form
+              onSubmit={handleCreateRecipe}
+              style={{
+                padding: '14px 18px',
+                background: '#f8fafd',
+                borderBottom: '1px solid var(--line)',
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr 100px',
+                gap: 12,
+                alignItems: 'flex-end'
+              }}
+            >
               <div>
                 <label style={{ fontSize: 11, fontWeight: 600 }}>Raw Ingredient:</label>
                 <select
@@ -494,6 +597,7 @@ export default function IngredientsPage({ api, onFlash }) {
                     <th>QTY REQUIRED / SERVING</th>
                     <th>CURRENT WAREHOUSE STOCK</th>
                     <th>DEPLETION STATUS</th>
+                    <th style={{ textAlign: 'right' }}>ACTION</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -521,6 +625,22 @@ export default function IngredientsPage({ api, onFlash }) {
                             Yields ~{canMake} servings
                           </span>
                         </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRecipe(r.id)}
+                            title="Remove from BOM"
+                            style={{
+                              background: 'transparent',
+                              border: 0,
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '4px'
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -528,13 +648,181 @@ export default function IngredientsPage({ api, onFlash }) {
               </table>
 
               {!productFilteredRecipes.length && (
-                <div className="empty-state" style={{ padding: '30px 20px' }}>
+                <div className="empty-state" style={{ padding: '30px 20px', textAlign: 'center', color: '#94a3b8' }}>
                   No raw ingredients mapped to this product yet. Add an ingredient above to enable automatic recipe stock depletion.
                 </div>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* ================= TAB 3: MODIFIERS & ADD-ONS ================= */}
+      {activeTab === 'modifiers' && (
+        <div className="table-card">
+          <div className="table-top">
+            <div>
+              <h3>Product Modifier Groups & Add-Ons</h3>
+              <span className="muted">Configure customer choices (milk, toppings, doneness) with pricing and BOM ingredient depletion</span>
+            </div>
+            <button
+              type="button"
+              className="primary-btn small"
+              onClick={() => {
+                setEditingModifier(null);
+                setShowModifierModal(true);
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={15} /> Create Modifier Group
+            </button>
+          </div>
+
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>MODIFIER GROUP</th>
+                  <th>ASSIGNED PRODUCT</th>
+                  <th>SELECTION TYPE</th>
+                  <th>REQUIRED</th>
+                  <th>AVAILABLE OPTIONS & PRICES</th>
+                  <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modifiers.map(mod => {
+                  const targetProd = products.find(p => p.id === mod.product_id);
+
+                  return (
+                    <tr key={mod.id}>
+                      <td>
+                        <strong style={{ fontSize: '13px', color: '#0f172a' }}>{mod.name}</strong>
+                      </td>
+                      <td>
+                        {targetProd ? (
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#2563eb' }}>
+                            {targetProd.name} ({targetProd.code})
+                          </span>
+                        ) : (
+                          <span className="pill" style={{ background: '#f1f5f9', color: '#475569' }}>
+                            All Products (Global)
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className="pill"
+                          style={{
+                            background: mod.type === 'single' ? '#eff6ff' : '#f0fdf4',
+                            color: mod.type === 'single' ? '#1d4ed8' : '#15803d',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {mod.type === 'single' ? 'Pick 1 (Single)' : 'Add Any (Multiple)'}
+                        </span>
+                      </td>
+                      <td>
+                        {mod.required ? (
+                          <span className="pill" style={{ background: '#fef2f2', color: '#b91c1c', fontWeight: 'bold' }}>
+                            Yes (Mandatory)
+                          </span>
+                        ) : (
+                          <span className="pill" style={{ background: '#f8fafc', color: '#64748b' }}>
+                            Optional
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {Array.isArray(mod.options) && mod.options.map((opt, idx) => (
+                            <span
+                              key={opt.id || idx}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#f1f5f9',
+                                border: '1px solid #e2e8f0',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                color: '#1e293b'
+                              }}
+                            >
+                              <strong>{opt.name}</strong>
+                              {Number(opt.price) > 0 && (
+                                <span style={{ color: '#16a34a', fontWeight: 'bold' }}>
+                                  +{money(opt.price)}
+                                </span>
+                              )}
+                              {opt.ingredient_id && (
+                                <span style={{ color: '#64748b', fontSize: '9px' }}>
+                                  [BOM: {opt.ingredient_qty}]
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            className="secondary-btn small"
+                            onClick={() => {
+                              setEditingModifier(mod);
+                              setShowModifierModal(true);
+                            }}
+                            title="Edit group"
+                            style={{ padding: '4px 8px' }}
+                          >
+                            <Edit3 size={13} /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteModifier(mod.id)}
+                            title="Delete group"
+                            style={{
+                              background: 'transparent',
+                              border: 0,
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '4px'
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {!modifiers.length && (
+              <div className="empty-state" style={{ padding: '40px 20px', textAlign: 'center', color: '#94a3b8' }}>
+                No modifier groups configured yet. Click "Create Modifier Group" above to add customizations like milk choices, extra toppings, or size upgrades.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modifier Group Create / Edit Modal */}
+      {showModifierModal && (
+        <ModifierGroupModal
+          modifier={editingModifier}
+          products={products}
+          ingredients={ingredients}
+          onSave={handleSaveModifier}
+          onClose={() => {
+            setShowModifierModal(false);
+            setEditingModifier(null);
+          }}
+          onFlash={onFlash}
+        />
       )}
     </>
   );

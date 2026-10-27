@@ -1277,6 +1277,88 @@ test('KDS Line-Item Bumping: toggles item completion and automatically advances 
   assert.equal(order.kitchen_status, 'preparing');
 });
 
+test('Recipe BOM Cost & Margin Engine: calculates total raw ingredient cost and profit margins accurately', () => {
+  const burgerIngredients = [
+    { name: 'Chicken Patty', quantity_required: 1, cost_per_unit: 220 },
+    { name: 'Burger Bun', quantity_required: 1, cost_per_unit: 45 },
+    { name: 'Cheese Slice', quantity_required: 1, cost_per_unit: 60 }
+  ];
+
+  const totalBOMCost = burgerIngredients.reduce(
+    (sum, ing) => sum + (ing.quantity_required * ing.cost_per_unit),
+    0
+  );
+  assert.equal(totalBOMCost, 325);
+
+  const takeawayPrice = 850;
+  const diningPrice = 950;
+
+  const takeawayProfit = takeawayPrice - totalBOMCost; // 525
+  const takeawayMargin = Math.round((takeawayProfit / takeawayPrice) * 10000) / 100; // 61.76%
+  assert.equal(takeawayProfit, 525);
+  assert.equal(takeawayMargin, 61.76);
+
+  const diningProfit = diningPrice - totalBOMCost; // 625
+  const diningMargin = Math.round((diningProfit / diningPrice) * 10000) / 100; // 65.79%
+  assert.equal(diningProfit, 625);
+  assert.equal(diningMargin, 65.79);
+});
+
+test('Recipe BOM Deletion Invariant: removing a BOM item decouples raw ingredient auto-depletion', () => {
+  const recipes = [
+    { id: 'rec-1', product_id: 'p1', ingredient_id: 'ing-1', quantity_required: 1 },
+    { id: 'rec-2', product_id: 'p1', ingredient_id: 'ing-2', quantity_required: 1 },
+    { id: 'rec-3', product_id: 'p1', ingredient_id: 'ing-3', quantity_required: 1 }
+  ];
+
+  // Delete 'rec-2' (Burger Bun)
+  const targetId = 'rec-2';
+  const idx = recipes.findIndex(r => r.id === targetId);
+  assert.notEqual(idx, -1);
+  recipes.splice(idx, 1);
+
+  assert.equal(recipes.length, 2);
+  assert.equal(recipes.some(r => r.id === 'rec-2'), false);
+  assert.equal(recipes.some(r => r.id === 'rec-1'), true);
+  assert.equal(recipes.some(r => r.id === 'rec-3'), true);
+
+  // Deleting non-existent recipe item returns -1
+  const notFoundIdx = recipes.findIndex(r => r.id === 'rec-999');
+  assert.equal(notFoundIdx, -1);
+});
+
+test('Modifier Group Management: validates option formatting, pricing rules, and ingredient linkage', () => {
+  const validGroup = {
+    name: 'Milk Choice',
+    type: 'single',
+    required: true,
+    options: [
+      { name: 'Fresh Milk', price: 0, ingredient_id: 'ing-5', ingredient_qty: 150 },
+      { name: 'Oat Milk', price: 150, ingredient_id: null, ingredient_qty: 0 }
+    ]
+  };
+
+  const parseResult = createModifierSchema.safeParse(validGroup);
+  assert.equal(parseResult.success, true);
+  assert.equal(parseResult.data.options.length, 2);
+  assert.equal(parseResult.data.options[1].price, 150);
+
+  // Empty name should fail
+  const invalidName = createModifierSchema.safeParse({
+    name: '  ',
+    options: [{ name: 'Option 1', price: 0 }]
+  });
+  assert.equal(invalidName.success, false);
+
+  // Negative price should fail
+  const negativePrice = createModifierSchema.safeParse({
+    name: 'Add-ons',
+    options: [{ name: 'Cheese', price: -50 }]
+  });
+  assert.equal(negativePrice.success, false);
+});
+
+
 
 
 

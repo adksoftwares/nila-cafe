@@ -54,6 +54,8 @@ export function auth(req, res, next) {
   }
 }
 
+export const requireAuth = auth;
+
 export function roles(...r) {
   return (req, res, next) => {
     if (r.includes(req.user.role)) return next();
