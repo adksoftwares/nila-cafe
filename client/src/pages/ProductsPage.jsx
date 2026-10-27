@@ -76,7 +76,6 @@ export default function ProductsPage({
                 <th>TAKEAWAY PRICE</th>
                 <th>DINING PRICE</th>
                 <th>STOCK</th>
-                <th>STATUS</th>
                 <th style={{ textAlign: 'center' }}>BOM & MODIFIERS</th>
                 <th style={{ textAlign: 'right' }}>ACTIONS</th>
               </tr>
@@ -101,9 +100,6 @@ export default function ProductsPage({
                       <span className={p.stock < 10 ? 'low-stock' : ''}>
                         {p.stock}
                       </span>
-                    </td>
-                    <td>
-                      <span className="pill success">Active</span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button
