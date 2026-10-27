@@ -7,6 +7,8 @@ import {
   demoSales
 } from '../state.js';
 import { auth, roles } from '../middleware/auth.js';
+import { validateBody } from '../middleware/validate.js';
+import { openShiftSchema, shiftAdjustmentSchema, closeShiftSchema } from '../schemas/shifts.js';
 
 const router = Router();
 
@@ -80,7 +82,7 @@ router.get('/current', auth, async (req, res) => {
 });
 
 // Shifts: Open Shift (Entering Opening Float)
-router.post('/open', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+router.post('/open', auth, roles('owner', 'manager', 'cashier'), validateBody(openShiftSchema), async (req, res) => {
   const { openingFloat = 0, notes = '' } = req.body;
   const floatVal = Math.max(0, Number(openingFloat) || 0);
 
@@ -128,11 +130,8 @@ router.post('/open', auth, roles('owner', 'manager', 'cashier'), async (req, res
 });
 
 // Shifts: Petty Cash In / Out (Adjustments)
-router.post('/adjustment', auth, roles('owner', 'manager'), async (req, res) => {
+router.post('/adjustment', auth, roles('owner', 'manager'), validateBody(shiftAdjustmentSchema), async (req, res) => {
   const { type, amount, reason } = req.body;
-  if (!['cash_in', 'cash_out'].includes(type) || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !reason) {
-    return res.status(400).json({ error: 'Provide valid adjustment type, positive amount, and reason.' });
-  }
 
   try {
     if (pool) {
@@ -173,7 +172,7 @@ router.post('/adjustment', auth, roles('owner', 'manager'), async (req, res) => 
 });
 
 // Shifts: Close Shift & Generate Official Z-Report
-router.post('/close', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(closeShiftSchema), async (req, res) => {
   const { actualCash = 0, notes = '' } = req.body;
   const counted = Math.max(0, Number(actualCash) || 0);
 

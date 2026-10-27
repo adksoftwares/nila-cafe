@@ -5,6 +5,7 @@ import helmet from 'helmet';
 
 import { pool, demoMode } from './db.js';
 import { apiLimiter, JWT_SECRET } from './middleware/auth.js';
+import { logger, httpLogger } from './utils/logger.js';
 
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
@@ -40,6 +41,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
+app.use(httpLogger);
 
 // ------------------- API ROUTES ------------------- //
 

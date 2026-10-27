@@ -7,6 +7,10 @@ import {
   generateReceiptESCPOS,
   formatTwoColumns
 } from './utils/escpos.js';
+import { checkoutSchema, voidSaleSchema } from './schemas/sales.js';
+import { openShiftSchema, shiftAdjustmentSchema } from './schemas/shifts.js';
+import { createModifierSchema } from './schemas/modifiers.js';
+import { logger } from './utils/logger.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -932,4 +936,125 @@ test('Product Modifiers Validation: validates single choice vs multi-choice sele
   assert.equal(validateSelections(multiGroup, []), true); // optional
   assert.equal(validateSelections(multiGroup, ['top-1', 'top-2']), true); // multi allowed
 });
+
+test('Zod Schema Validation: Checkout rejects invalid orderType and empty items array', () => {
+  // Invalid order type
+  const badOrderType = checkoutSchema.safeParse({
+    orderType: 'curbside_pickup',
+    items: [{ productId: 'p1', quantity: 1 }]
+  });
+  assert.equal(badOrderType.success, false);
+  assert.ok(badOrderType.error.issues.some(e => e.path.includes('orderType')));
+
+  // Empty items array
+  const emptyItems = checkoutSchema.safeParse({
+    orderType: 'takeaway',
+    items: []
+  });
+  assert.equal(emptyItems.success, false);
+  assert.ok(emptyItems.error.issues.some(e => e.path.includes('items')));
+
+  // Non-positive quantity
+  const zeroQty = checkoutSchema.safeParse({
+    orderType: 'takeaway',
+    items: [{ productId: 'p1', quantity: 0 }]
+  });
+  assert.equal(zeroQty.success, false);
+
+  // Valid checkout
+  const valid = checkoutSchema.safeParse({
+    orderType: 'dining',
+    tableNumber: 'Table 3',
+    items: [
+      {
+        productId: 'p5',
+        quantity: 2,
+        notes: 'Extra cold',
+        modifiers: [{ name: 'Oat Milk', price: 150 }]
+      }
+    ],
+    payments: [{ method: 'cash', amount: 1540 }]
+  });
+  assert.equal(valid.success, true);
+  assert.equal(valid.data.items[0].quantity, 2);
+  assert.equal(valid.data.discount, 0); // Default applied
+});
+
+test('Zod Schema Validation: Shift Opening rejects negative float and validates adjustment parameters', () => {
+  // Negative opening float
+  const badFloat = openShiftSchema.safeParse({
+    openingFloat: -2000
+  });
+  assert.equal(badFloat.success, false);
+  assert.ok(badFloat.error.issues.some(e => e.path.includes('openingFloat')));
+
+  // Valid opening float
+  const goodFloat = openShiftSchema.safeParse({
+    openingFloat: 5000,
+    notes: 'Morning till'
+  });
+  assert.equal(goodFloat.success, true);
+  assert.equal(goodFloat.data.openingFloat, 5000);
+
+  // Invalid adjustment type
+  const badAdj = shiftAdjustmentSchema.safeParse({
+    type: 'stolen_cash',
+    amount: 500,
+    reason: 'Suspicious discrepancy'
+  });
+  assert.equal(badAdj.success, false);
+
+  // Non-positive adjustment amount
+  const zeroAdj = shiftAdjustmentSchema.safeParse({
+    type: 'cash_in',
+    amount: 0,
+    reason: 'Zero amount'
+  });
+  assert.equal(zeroAdj.success, false);
+});
+
+test('Zod Schema Validation: Modifiers Schema validates options array and non-negative pricing', () => {
+  // Empty options array
+  const emptyOpts = createModifierSchema.safeParse({
+    name: 'Milk Choice',
+    type: 'single',
+    options: []
+  });
+  assert.equal(emptyOpts.success, false);
+
+  // Negative option price
+  const negativePrice = createModifierSchema.safeParse({
+    name: 'Milk Choice',
+    type: 'single',
+    options: [{ name: 'Almond Milk', price: -50 }]
+  });
+  assert.equal(negativePrice.success, false);
+
+  // Valid modifier group
+  const valid = createModifierSchema.safeParse({
+    name: 'Toppings',
+    type: 'multiple',
+    required: false,
+    options: [
+      { name: 'Extra Cheese', price: 80, ingredient_id: 'ing-3', ingredient_qty: 1 },
+      { name: 'Jalapeños', price: 50 }
+    ]
+  });
+  assert.equal(valid.success, true);
+  assert.equal(valid.data.options.length, 2);
+  assert.equal(valid.data.type, 'multiple');
+});
+
+test('Structured Logger: Pino logger instance provides high-performance logging methods and levels', () => {
+  assert.ok(typeof logger.info === 'function');
+  assert.ok(typeof logger.warn === 'function');
+  assert.ok(typeof logger.error === 'function');
+  assert.ok(typeof logger.child === 'function');
+
+  // Child logger tenant binding test
+  const shopLogger = logger.child({ shopId: 'shop-demo', reqId: 'req-1234' });
+  assert.ok(shopLogger);
+  assert.ok(typeof shopLogger.info === 'function');
+});
+
 

@@ -17,11 +17,13 @@ import {
 } from '../state.js';
 import { calculateBillTaxes } from '../utils/tax.js';
 import { auth, roles } from '../middleware/auth.js';
+import { validateBody } from '../middleware/validate.js';
+import { checkoutSchema, voidSaleSchema } from '../schemas/sales.js';
 
 const router = Router();
 
 // Sales: Checkout & Inventory Management (Deadlock-Free Batch Query, Idempotent, Multi-Payment, Loyalty Points & Promotions)
-router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
+router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), validateBody(checkoutSchema), async (req, res) => {
   const {
     orderType,
     tableNumber = null,
@@ -642,13 +644,9 @@ router.get('/', auth, roles('admin', 'owner', 'manager', 'cashier', 'waiter'), a
 });
 
 // Sales: Manager Void Authorization & Inventory Restock
-router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
+router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), validateBody(voidSaleSchema), async (req, res) => {
   const saleId = req.params.id;
   const { reason, managerPin } = req.body;
-
-  if (!reason || !String(reason).trim()) {
-    return res.status(400).json({ error: 'A reason for voiding this transaction is required.' });
-  }
 
   const cleanReason = String(reason).trim();
   const isDirectManager = ['owner', 'manager'].includes(req.user.role);

@@ -14,6 +14,8 @@ import {
 } from '../state.js';
 import { calculateBillTaxes } from '../utils/tax.js';
 import { auth, roles } from '../middleware/auth.js';
+import { validateBody } from '../middleware/validate.js';
+import { holdTableSchema } from '../schemas/tables.js';
 
 const router = Router();
 
@@ -78,17 +80,13 @@ router.get('/', auth, async (req, res) => {
 });
 
 // Tables: Send to Kitchen & Hold Open Tab (Incremental KOT Firing)
-router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (req, res) => {
+router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), validateBody(holdTableSchema), async (req, res) => {
   const {
     tableNumber,
     items = [],
     discount = 0,
     customerId = null
   } = req.body;
-
-  if (!tableNumber || !Array.isArray(items) || !items.length) {
-    return res.status(400).json({ error: 'Valid table number and at least one item required.' });
-  }
 
   try {
     if (!pool) {

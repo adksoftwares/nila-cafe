@@ -2,6 +2,8 @@ import express from 'express';
 import { pool } from '../db.js';
 import { demoModifiers } from '../state.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validateBody } from '../middleware/validate.js';
+import { createModifierSchema, updateModifierSchema } from '../schemas/modifiers.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -43,19 +45,9 @@ router.get('/', async (req, res) => {
  * POST /api/modifiers
  * Creates a modifier group for a product (or category/shop)
  */
-router.post('/', async (req, res) => {
+router.post('/', validateBody(createModifierSchema), async (req, res) => {
   try {
     const { productId, name, type = 'single', required = false, options = [] } = req.body;
-
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: 'Modifier group name is required.' });
-    }
-    if (!['single', 'multiple'].includes(type)) {
-      return res.status(400).json({ error: "Modifier type must be either 'single' or 'multiple'." });
-    }
-    if (!Array.isArray(options) || options.length === 0) {
-      return res.status(400).json({ error: 'At least one modifier option is required.' });
-    }
 
     // Format and sanitize options
     const formattedOptions = options.map((opt, idx) => ({

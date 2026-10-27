@@ -3,11 +3,13 @@ import bcrypt from 'bcryptjs';
 import { pool, query } from '../db.js';
 import { demoUsers } from '../state.js';
 import { auth, authLimiter, safeUser, sign } from '../middleware/auth.js';
+import { validateBody } from '../middleware/validate.js';
+import { loginSchema } from '../schemas/auth.js';
 
 const router = Router();
 
 // Auth Login
-router.post('/login', authLimiter, async (req, res) => {
+router.post('/login', authLimiter, validateBody(loginSchema), async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
 
