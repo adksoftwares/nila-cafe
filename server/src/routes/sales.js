@@ -16,6 +16,7 @@ import {
   broadcastKDS
 } from '../state.js';
 import { calculateBillTaxes } from '../utils/tax.js';
+import { recordAuditEvent } from '../utils/audit.js';
 import { auth, roles } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { checkoutSchema, voidSaleSchema } from '../schemas/sales.js';
@@ -266,6 +267,23 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), validateB
       items: lines,
       payments: paymentList
     };
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name || 'Cashier',
+      userRole: req.user.role,
+      action: 'SALE_COMPLETED',
+      entityType: 'sale',
+      entityId: demoSale.id,
+      details: {
+        billNumber: demoSale.bill_number,
+        total: demoSale.total,
+        orderType: demoSale.order_type,
+        paymentMethod: demoSale.payment_method,
+        tableNumber: demoSale.table_number
+      }
+    });
 
     if (idempotencyKey) {
       demoIdempotencyCache.set(`${req.user.shop_id}:${idempotencyKey}`, {
@@ -931,6 +949,25 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), v
     broadcastKDS(req.user.shop_id, 'order:status', {
       orderId: sale.id,
       kitchen_status: 'voided'
+    });
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name || 'User',
+      userRole: req.user.role,
+      action: 'SALE_VOID',
+      category: 'sales',
+      severity: 'danger',
+      entityType: 'sale',
+      entityId: sale.id,
+      details: {
+        billNumber: sale.bill_number,
+        total: sale.total,
+        reason: cleanReason,
+        authorizedByName: authorizer?.name || 'Manager',
+        initiatedByRole: req.user.role
+      }
     });
 
     res.json({

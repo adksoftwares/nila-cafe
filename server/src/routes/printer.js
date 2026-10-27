@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import net from 'node:net';
 import { auth, roles } from '../middleware/auth.js';
+import { recordAuditEvent } from '../utils/audit.js';
 import {
   generateDrawerKickESCPOS,
   generateReceiptESCPOS,
@@ -58,6 +59,22 @@ router.post('/open-drawer', auth, roles('owner', 'manager', 'cashier'), async (r
   const kickCommand = generateDrawerKickESCPOS();
   const printerIp = process.env.PRINTER_IP;
   const printerPort = Number(process.env.PRINTER_PORT || 9100);
+
+  // Record audit log for security & till monitoring
+  await recordAuditEvent({
+    shopId: req.user.shop_id,
+    userId: req.user.sub,
+    userName: req.user.name || 'User',
+    userRole: req.user.role,
+    action: 'DRAWER_KICK',
+    category: 'fiscal',
+    severity: 'danger',
+    entityType: 'drawer',
+    details: {
+      method: printerIp ? 'hardware-tcp' : 'client-direct',
+      reason: 'Manual cash drawer kick pulse triggered from register UI'
+    }
+  });
 
   try {
     if (printerIp) {

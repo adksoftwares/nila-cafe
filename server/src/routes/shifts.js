@@ -10,6 +10,7 @@ import {
 import { auth, roles } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { openShiftSchema, shiftAdjustmentSchema, closeShiftSchema } from '../schemas/shifts.js';
+import { recordAuditEvent } from '../utils/audit.js';
 
 const router = Router();
 
@@ -103,6 +104,16 @@ router.post('/open', auth, roles('owner', 'manager', 'cashier'), validateBody(op
         [req.user.shop_id, req.user.sub, floatVal, floatVal, String(notes || '').trim()],
         req.user
       );
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'SHIFT_OPEN',
+        entityType: 'shift',
+        entityId: rows[0].id,
+        details: { openingFloat: floatVal, notes }
+      });
       return res.status(201).json({ shift: rows[0] });
     }
 
@@ -124,6 +135,16 @@ router.post('/open', auth, roles('owner', 'manager', 'cashier'), validateBody(op
       notes: String(notes || '').trim()
     };
     setDemoShift(newDemoShift);
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'SHIFT_OPEN',
+      entityType: 'shift',
+      entityId: newDemoShift.id,
+      details: { openingFloat: floatVal, notes }
+    });
     res.status(201).json({ shift: newDemoShift });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -150,6 +171,16 @@ router.post('/adjustment', auth, roles('owner', 'manager'), validateBody(shiftAd
         [active[0].id, req.user.shop_id, req.user.sub, type, Number(amount), reason.trim()],
         req.user
       );
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'SHIFT_ADJUSTMENT',
+        entityType: 'shift',
+        entityId: active[0].id,
+        details: { type, amount: Number(amount), reason: reason.trim() }
+      });
       return res.status(201).json({ adjustment: rows[0] });
     }
 
@@ -166,6 +197,16 @@ router.post('/adjustment', auth, roles('owner', 'manager'), validateBody(shiftAd
       created_at: new Date().toISOString()
     };
     demoShiftAdjustments.push(adj);
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'SHIFT_ADJUSTMENT',
+      entityType: 'shift',
+      entityId: demoShift.id,
+      details: { type, amount: Number(amount), reason: reason.trim() }
+    });
     res.status(201).json({ adjustment: adj });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -370,6 +411,22 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
         billsCount: bills
       };
 
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'SHIFT_CLOSE',
+        entityType: 'shift',
+        entityId: shift.id,
+        details: {
+          zReportNumber,
+          expectedCash,
+          actualCountedCash: counted,
+          variance: difference,
+          varianceReason: varianceReason || null
+        }
+      });
       return res.json({ shift: updated, zReport });
     }
 
@@ -426,6 +483,23 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
       denominations,
       billsCount: validCloseSales.length
     };
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name || 'Demo Cashier',
+      userRole: req.user.role,
+      action: 'SHIFT_CLOSE',
+      entityType: 'shift',
+      entityId: closedDemoShift.id,
+      details: {
+        zReportNumber,
+        expectedCash,
+        actualCountedCash: counted,
+        variance: difference,
+        varianceReason: varianceReason || null
+      }
+    });
 
     res.json({ shift: closedDemoShift, zReport });
   } catch (e) {

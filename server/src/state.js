@@ -309,3 +309,117 @@ export function setDemoModifiers(mods) {
   demoModifiers = mods;
 }
 
+export let demoAuditLogs = [
+  {
+    id: 'audit-demo-1',
+    shop_id: 'shop-demo',
+    user_id: 'u-cashier',
+    user_name: 'Cashier One',
+    user_role: 'cashier',
+    action: 'SHIFT_OPEN',
+    category: 'fiscal',
+    severity: 'info',
+    entity_type: 'shift',
+    entity_id: 'shift-1',
+    details: {
+      userName: 'Cashier One',
+      userRole: 'cashier',
+      category: 'fiscal',
+      severity: 'info',
+      openingFloat: 5000,
+      notes: 'Morning shift opening float verified'
+    },
+    created_at: new Date(Date.now() - 3600000 * 5).toISOString()
+  },
+  {
+    id: 'audit-demo-2',
+    shop_id: 'shop-demo',
+    user_id: 'u-cashier',
+    user_name: 'Cashier One',
+    user_role: 'cashier',
+    action: 'SALE_COMPLETED',
+    category: 'sales',
+    severity: 'info',
+    entity_type: 'sale',
+    entity_id: 'sale-demo-1',
+    details: {
+      userName: 'Cashier One',
+      userRole: 'cashier',
+      category: 'sales',
+      severity: 'info',
+      billNumber: 'POS-NILA-1001',
+      total: 2250,
+      orderType: 'dining',
+      tableNumber: 'Table 4',
+      paymentMethod: 'cash'
+    },
+    created_at: new Date(Date.now() - 3600000 * 4).toISOString()
+  },
+  {
+    id: 'audit-demo-3',
+    shop_id: 'shop-demo',
+    user_id: 'u-manager',
+    user_name: 'Store Manager',
+    user_role: 'manager',
+    action: 'DRAWER_KICK',
+    category: 'fiscal',
+    severity: 'danger',
+    entity_type: 'drawer',
+    entity_id: null,
+    details: {
+      userName: 'Store Manager',
+      userRole: 'manager',
+      category: 'fiscal',
+      severity: 'danger',
+      reason: 'Manual cash drawer kick pulse triggered from register UI'
+    },
+    created_at: new Date(Date.now() - 3600000 * 3).toISOString()
+  },
+  {
+    id: 'audit-demo-4',
+    shop_id: 'shop-demo',
+    user_id: 'u-owner',
+    user_name: 'Demo Owner',
+    user_role: 'owner',
+    action: 'INGREDIENT_RESTOCK',
+    category: 'inventory',
+    severity: 'info',
+    entity_type: 'ingredient',
+    entity_id: 'ing-4',
+    details: {
+      userName: 'Demo Owner',
+      userRole: 'owner',
+      category: 'inventory',
+      severity: 'info',
+      ingredientName: 'Coffee Beans',
+      deltaQty: 2000,
+      unit: 'g',
+      reason: 'purchase'
+    },
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+  },
+  {
+    id: 'audit-demo-5',
+    shop_id: 'shop-demo',
+    user_id: 'u-cashier',
+    user_name: 'Cashier One',
+    user_role: 'cashier',
+    action: 'SALE_COMPLETED',
+    category: 'sales',
+    severity: 'info',
+    entity_type: 'sale',
+    entity_id: 'sale-demo-2',
+    details: {
+      userName: 'Cashier One',
+      userRole: 'cashier',
+      category: 'sales',
+      severity: 'info',
+      billNumber: 'POS-NILA-1002',
+      total: 1500,
+      orderType: 'takeaway',
+      paymentMethod: 'card'
+    },
+    created_at: new Date(Date.now() - 3600000 * 1).toISOString()
+  }
+];
+

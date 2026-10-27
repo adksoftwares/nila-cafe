@@ -12,16 +12,20 @@ import {
   Receipt,
   ChefHat,
   Users,
-  Layers
+  Layers,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function Sidebar({ user, page, setPage, salesCount, shopName, onLogout, onFlash }) {
   const admin = user.role === 'admin';
+  const isManagerOrOwner = user.role === 'owner' || user.role === 'manager' || admin;
+
   const nav = admin
     ? [
         { name: 'Overview', icon: BarChart3 },
         { name: 'Shops', icon: Store },
         { name: 'Reports', icon: Activity },
+        { name: 'Audit Trail', icon: ShieldAlert },
         { name: 'Settings', icon: Settings }
       ]
     : [
@@ -32,6 +36,7 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
         { name: 'Sales', icon: Receipt },
         { name: 'Customers', icon: Users },
         { name: 'Reports', icon: BarChart3 },
+        ...(isManagerOrOwner ? [{ name: 'Audit Trail', icon: ShieldAlert }] : []),
         { name: 'Settings', icon: Settings }
       ];
 

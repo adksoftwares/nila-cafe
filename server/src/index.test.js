@@ -19,6 +19,12 @@ import {
   getSLAClassification,
   bumpOrderItem
 } from './utils/kds.js';
+import {
+  recordAuditEvent,
+  filterAuditLogs,
+  ACTION_CATEGORIES,
+  ACTION_SEVERITIES
+} from './utils/audit.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -1357,6 +1363,118 @@ test('Modifier Group Management: validates option formatting, pricing rules, and
   });
   assert.equal(negativePrice.success, false);
 });
+
+test('Security Audit Engine: records immutable events with correct actor, severity, and category classification', async () => {
+  const voidEvent = await recordAuditEvent({
+    shopId: 'shop-demo',
+    userId: 'u-mgr-1',
+    userName: 'Manager Alice',
+    userRole: 'manager',
+    action: 'SALE_VOID',
+    entityType: 'sale',
+    entityId: 'sale-999',
+    details: { billNumber: 'POS-NILA-999', total: 3500, reason: 'Customer walkout' }
+  });
+
+  assert.equal(voidEvent.action, 'SALE_VOID');
+  assert.equal(voidEvent.category, 'sales');
+  assert.equal(voidEvent.severity, 'danger');
+  assert.equal(voidEvent.user_name, 'Manager Alice');
+  assert.equal(voidEvent.details.billNumber, 'POS-NILA-999');
+
+  const kickEvent = await recordAuditEvent({
+    shopId: 'shop-demo',
+    userId: 'u-cashier-1',
+    userName: 'Cashier Bob',
+    userRole: 'cashier',
+    action: 'DRAWER_KICK',
+    entityType: 'drawer'
+  });
+
+  assert.equal(kickEvent.action, 'DRAWER_KICK');
+  assert.equal(kickEvent.category, 'fiscal');
+  assert.equal(kickEvent.severity, 'danger');
+
+  const openShiftEvent = await recordAuditEvent({
+    shopId: 'shop-demo',
+    userId: 'u-cashier-1',
+    userName: 'Cashier Bob',
+    userRole: 'cashier',
+    action: 'SHIFT_OPEN',
+    details: { openingFloat: 5000 }
+  });
+
+  assert.equal(openShiftEvent.category, 'fiscal');
+  assert.equal(openShiftEvent.severity, 'info');
+});
+
+test('Audit Trail Query & Search Engine: filters by category, severity, and free-text search term', () => {
+  const sampleLogs = [
+    {
+      id: 'log-1',
+      action: 'SHIFT_OPEN',
+      category: 'fiscal',
+      severity: 'info',
+      user_name: 'Cashier One',
+      user_role: 'cashier',
+      details: { openingFloat: 5000 }
+    },
+    {
+      id: 'log-2',
+      action: 'DRAWER_KICK',
+      category: 'fiscal',
+      severity: 'danger',
+      user_name: 'Store Manager',
+      user_role: 'manager',
+      details: { reason: 'Manual kick' }
+    },
+    {
+      id: 'log-3',
+      action: 'SALE_VOID',
+      category: 'sales',
+      severity: 'danger',
+      user_name: 'Store Manager',
+      user_role: 'manager',
+      details: { billNumber: 'POS-NILA-888', total: 2400, reason: 'Customer changed mind' }
+    },
+    {
+      id: 'log-4',
+      action: 'INGREDIENT_RESTOCK',
+      category: 'inventory',
+      severity: 'info',
+      user_name: 'Demo Owner',
+      user_role: 'owner',
+      details: { ingredientName: 'Fresh Milk', deltaQty: 50 }
+    }
+  ];
+
+  // 1. Filter by category
+  const fiscalResults = filterAuditLogs(sampleLogs, { category: 'fiscal' });
+  assert.equal(fiscalResults.total, 2);
+  assert.equal(fiscalResults.logs.every(l => l.category === 'fiscal'), true);
+
+  // 2. Filter by severity
+  const dangerResults = filterAuditLogs(sampleLogs, { severity: 'danger' });
+  assert.equal(dangerResults.total, 2);
+  assert.equal(dangerResults.logs.some(l => l.action === 'DRAWER_KICK'), true);
+  assert.equal(dangerResults.logs.some(l => l.action === 'SALE_VOID'), true);
+
+  // 3. Search by bill number in details
+  const billSearch = filterAuditLogs(sampleLogs, { search: 'POS-NILA-888' });
+  assert.equal(billSearch.total, 1);
+  assert.equal(billSearch.logs[0].id, 'log-3');
+
+  // 4. Search by actor name
+  const actorSearch = filterAuditLogs(sampleLogs, { search: 'Store Manager' });
+  assert.equal(actorSearch.total, 2);
+
+  // 5. Pagination offset & limit
+  const paged = filterAuditLogs(sampleLogs, { limit: 2, offset: 1 });
+  assert.equal(paged.total, 4);
+  assert.equal(paged.logs.length, 2);
+  assert.equal(paged.logs[0].id, 'log-2');
+});
+
 
 
 

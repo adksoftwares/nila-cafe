@@ -4,6 +4,7 @@ import { demoModifiers } from '../state.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { createModifierSchema, updateModifierSchema } from '../schemas/modifiers.js';
+import { recordAuditEvent } from '../utils/audit.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -71,6 +72,18 @@ router.post('/', validateBody(createModifierSchema), async (req, res) => {
         created_at: new Date().toISOString()
       };
       demoModifiers.push(newMod);
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'MODIFIER_GROUP_CREATE',
+        category: 'menu',
+        severity: 'info',
+        entityType: 'modifier',
+        entityId: newMod.id,
+        details: { name: newMod.name, type: newMod.type, optionsCount: formattedOptions.length }
+      });
       return res.status(201).json({ success: true, modifier: newMod });
     }
 
@@ -80,6 +93,19 @@ router.post('/', validateBody(createModifierSchema), async (req, res) => {
        RETURNING *`,
       [req.user.shop_id, productId || null, name.trim(), type, Boolean(required), JSON.stringify(formattedOptions)]
     )).rows[0];
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'MODIFIER_GROUP_CREATE',
+      category: 'menu',
+      severity: 'info',
+      entityType: 'modifier',
+      entityId: row.id,
+      details: { name: row.name, type: row.type, optionsCount: formattedOptions.length }
+    });
 
     res.status(201).json({ success: true, modifier: row });
   } catch (err) {
@@ -161,18 +187,44 @@ router.delete('/:id', async (req, res) => {
     if (!pool) {
       const idx = demoModifiers.findIndex(m => m.id === id && m.shop_id === req.user.shop_id);
       if (idx === -1) return res.status(404).json({ error: 'Modifier not found.' });
+      const removedMod = demoModifiers[idx];
       demoModifiers.splice(idx, 1);
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'MODIFIER_GROUP_DELETE',
+        category: 'menu',
+        severity: 'warning',
+        entityType: 'modifier',
+        entityId: id,
+        details: { name: removedMod.name }
+      });
       return res.json({ success: true, message: 'Modifier deleted.' });
     }
 
     const result = await pool.query(
-      'DELETE FROM product_modifiers WHERE id = $1 AND shop_id = $2',
+      'DELETE FROM product_modifiers WHERE id = $1 AND shop_id = $2 RETURNING name',
       [id, req.user.shop_id]
     );
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Modifier not found.' });
     }
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'MODIFIER_GROUP_DELETE',
+      category: 'menu',
+      severity: 'warning',
+      entityType: 'modifier',
+      entityId: id,
+      details: { name: result.rows[0]?.name }
+    });
 
     res.json({ success: true, message: 'Modifier deleted.' });
   } catch (err) {

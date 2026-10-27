@@ -6,6 +6,7 @@ import {
   demoIngredientMovements
 } from '../state.js';
 import { auth, roles } from '../middleware/auth.js';
+import { recordAuditEvent } from '../utils/audit.js';
 
 const router = Router();
 
@@ -127,6 +128,16 @@ router.patch('/:id/stock', auth, roles('owner', 'manager'), async (req, res) => 
         );
 
         await client.query('COMMIT');
+        await recordAuditEvent({
+          shopId: req.user.shop_id,
+          userId: req.user.sub,
+          userName: req.user.name,
+          userRole: req.user.role,
+          action: 'INGREDIENT_RESTOCK',
+          entityType: 'ingredient',
+          entityId: ing.id,
+          details: { ingredientName: ing.name, deltaQty, unit: ing.unit, reason }
+        });
         return res.json({ success: true, ingredient: updated });
       } catch (err) {
         await client.query('ROLLBACK');
@@ -148,6 +159,17 @@ router.patch('/:id/stock', auth, roles('owner', 'manager'), async (req, res) => 
       reason: reason === 'purchase' ? 'purchase' : 'manual_adjustment',
       reference_id: notes || null,
       created_at: new Date().toISOString()
+    });
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'INGREDIENT_RESTOCK',
+      entityType: 'ingredient',
+      entityId: ing.id,
+      details: { ingredientName: ing.name, deltaQty, unit: ing.unit, reason }
     });
 
     res.json({ success: true, ingredient: ing });
@@ -250,6 +272,18 @@ router.delete('/recipes/:id', auth, roles('owner', 'manager'), async (req, res) 
       if (!result.length) {
         return res.status(404).json({ error: 'Recipe item not found.' });
       }
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'RECIPE_BOM_DELETE',
+        category: 'inventory',
+        severity: 'warning',
+        entityType: 'recipe',
+        entityId: id,
+        details: { recipeId: id }
+      });
       return res.json({ success: true, message: 'Recipe item removed from BOM.' });
     }
 
@@ -257,7 +291,24 @@ router.delete('/recipes/:id', auth, roles('owner', 'manager'), async (req, res) 
     if (idx === -1) {
       return res.status(404).json({ error: 'Recipe item not found.' });
     }
+    const removedRecipe = demoRecipes[idx];
     demoRecipes.splice(idx, 1);
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'RECIPE_BOM_DELETE',
+      category: 'inventory',
+      severity: 'warning',
+      entityType: 'recipe',
+      entityId: id,
+      details: {
+        recipeId: id,
+        product_id: removedRecipe.product_id,
+        ingredient_name: removedRecipe.ingredient_name
+      }
+    });
     res.json({ success: true, message: 'Recipe item removed from BOM.' });
   } catch (e) {
     res.status(500).json({ error: e.message });

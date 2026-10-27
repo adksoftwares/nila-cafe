@@ -34,6 +34,7 @@ import CustomersPage from './pages/CustomersPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
 import AdminShopsPage from './pages/AdminShopsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import AuditPage from './pages/AuditPage.jsx';
 
 function MainPOSApp({
   token,
@@ -552,6 +553,13 @@ function MainPOSApp({
               sales={sales}
               products={products}
               onGoToProducts={() => setPage('Products')}
+            />
+          )}
+
+          {page === 'Audit Trail' && (
+            <AuditPage
+              api={api}
+              onFlash={flash}
             />
           )}
 
