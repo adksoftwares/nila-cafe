@@ -11,5 +11,11 @@ services:
     volumes:
       - pos_data:/var/lib/postgresql/data
       - ./server/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos_user -d pos_saas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pos_data:

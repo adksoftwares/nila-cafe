@@ -26,6 +26,13 @@ import {
   ACTION_CATEGORIES,
   ACTION_SEVERITIES
 } from './utils/audit.js';
+import {
+  formatBytes,
+  getSystemMetrics,
+  getDatabaseDiagnostics,
+  getHealthDiagnostics,
+  setupGracefulShutdown
+} from './utils/health.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -1581,6 +1588,168 @@ test('Promotions Lifecycle & Minimum Order Spend Invariant: validates coupon app
   const isEligibleDisabled = promo.active && subtotalHigh >= promo.min_order_amount;
   assert.equal(isEligibleDisabled, false);
 });
+
+test('Health Check: formatBytes converts byte counts to human-readable units', () => {
+  assert.equal(formatBytes(0), '0 B');
+  assert.equal(formatBytes(500), '500 B');
+  assert.equal(formatBytes(1024), '1 KB');
+  assert.equal(formatBytes(1024 * 1024 * 1.5), '1.5 MB');
+  assert.equal(formatBytes(1024 * 1024 * 1024 * 2.25), '2.25 GB');
+  assert.equal(formatBytes(-10), '0 B');
+  assert.equal(formatBytes('invalid'), '0 B');
+});
+
+test('Health Check: getSystemMetrics collects valid memory and process statistics', () => {
+  const metrics = getSystemMetrics();
+  assert.ok(metrics.memory.rss.includes('B'));
+  assert.ok(metrics.memory.heapUsed.includes('B'));
+  assert.ok(metrics.memory.heapTotal.includes('B'));
+  assert.ok(metrics.memory.rssBytes > 0);
+  assert.ok(metrics.memory.heapUsedBytes > 0);
+  assert.ok(metrics.uptimeSeconds >= 0);
+  assert.equal(typeof metrics.nodeVersion, 'string');
+  assert.equal(typeof metrics.platform, 'string');
+  assert.ok(Array.isArray(metrics.loadAverage));
+});
+
+test('Health Check: getDatabaseDiagnostics probes database connection pool and latency', async () => {
+  // Scenario 1: Demo mode active
+  const demoDiag = await getDatabaseDiagnostics(null, true);
+  assert.equal(demoDiag.status, 'demo-mode');
+  assert.equal(demoDiag.connected, true);
+  assert.equal(demoDiag.latencyMs, null);
+  assert.equal(demoDiag.pool, null);
+
+  // Scenario 2: Active PostgreSQL pool with successful ping
+  const mockHealthyPool = {
+    totalCount: 10,
+    idleCount: 8,
+    waitingCount: 0,
+    query: async (sql) => {
+      assert.equal(sql, 'SELECT 1');
+      return { rows: [{ '?column?': 1 }] };
+    }
+  };
+  const healthyDiag = await getDatabaseDiagnostics(mockHealthyPool, false);
+  assert.equal(healthyDiag.status, 'connected');
+  assert.equal(healthyDiag.connected, true);
+  assert.equal(typeof healthyDiag.latencyMs, 'number');
+  assert.deepEqual(healthyDiag.pool, { totalCount: 10, idleCount: 8, waitingCount: 0 });
+
+  // Scenario 3: Database query failure / network disconnection
+  const mockFailingPool = {
+    totalCount: 5,
+    idleCount: 0,
+    waitingCount: 2,
+    query: async () => {
+      throw new Error('Connection terminated unexpectedly');
+    }
+  };
+  const failingDiag = await getDatabaseDiagnostics(mockFailingPool, false);
+  assert.equal(failingDiag.status, 'disconnected');
+  assert.equal(failingDiag.connected, false);
+  assert.equal(failingDiag.latencyMs, null);
+  assert.equal(failingDiag.error, 'Connection terminated unexpectedly');
+  assert.equal(failingDiag.pool.waitingCount, 2);
+});
+
+test('Health Check: getHealthDiagnostics returns 200 OK for healthy state and 503 for disconnected database or shutting down', async () => {
+  // 1. Healthy demo mode
+  const resDemo = await getHealthDiagnostics({ pool: null, demoMode: true });
+  assert.equal(resDemo.httpStatus, 200);
+  assert.equal(resDemo.body.status, 'ok');
+  assert.equal(resDemo.body.database, 'demo-mode');
+  assert.equal(resDemo.body.mode, 'demo');
+  assert.ok(resDemo.body.uptimeSeconds >= 0);
+  assert.ok(resDemo.body.timestamp);
+  assert.ok(resDemo.body.system.memory.rss);
+
+  // 2. Healthy database mode
+  const mockPool = {
+    totalCount: 5,
+    idleCount: 4,
+    waitingCount: 0,
+    query: async () => ({ rows: [] })
+  };
+  const resDb = await getHealthDiagnostics({ pool: mockPool, demoMode: false });
+  assert.equal(resDb.httpStatus, 200);
+  assert.equal(resDb.body.status, 'ok');
+  assert.equal(resDb.body.database, 'connected');
+  assert.equal(resDb.body.mode, 'database');
+  assert.equal(typeof resDb.body.databaseMetrics.latencyMs, 'number');
+
+  // 3. Database disconnected -> 503 Service Unavailable & unhealthy
+  const mockBadPool = {
+    query: async () => { throw new Error('DB connection refused'); }
+  };
+  const resBadDb = await getHealthDiagnostics({ pool: mockBadPool, demoMode: false });
+  assert.equal(resBadDb.httpStatus, 503);
+  assert.equal(resBadDb.body.status, 'unhealthy');
+  assert.equal(resBadDb.body.database, 'disconnected');
+
+  // 4. In-flight graceful termination -> 503 shutting_down
+  const resShutdown = await getHealthDiagnostics({ pool: mockPool, demoMode: false, isShuttingDown: true });
+  assert.equal(resShutdown.httpStatus, 503);
+  assert.equal(resShutdown.body.status, 'shutting_down');
+});
+
+test('Graceful Shutdown: cleanly closes HTTP server, ends database pool, and handles lifecycle events', async () => {
+  let serverClosed = false;
+  let poolEnded = false;
+  let exitCode = null;
+
+  const mockServer = {
+    close: (cb) => {
+      serverClosed = true;
+      cb();
+    }
+  };
+
+  const mockPool = {
+    end: async () => {
+      poolEnded = true;
+    }
+  };
+
+  const mockLogger = {
+    info: () => {},
+    warn: () => {},
+    error: () => {}
+  };
+
+  const fakeExit = (code) => {
+    exitCode = code;
+  };
+
+  const shutdownController = setupGracefulShutdown({
+    server: mockServer,
+    pool: mockPool,
+    timeoutMs: 2000,
+    loggerInstance: mockLogger,
+    exitFn: fakeExit
+  });
+
+  assert.equal(shutdownController.isTerminating(), false);
+
+  // Trigger graceful shutdown
+  await shutdownController.handleShutdown('SIGTERM');
+
+  assert.equal(serverClosed, true);
+  assert.equal(poolEnded, true);
+  assert.equal(exitCode, 0);
+  assert.equal(shutdownController.isTerminating(), true);
+
+  // Triggering duplicate shutdown signal should be ignored
+  serverClosed = false;
+  poolEnded = false;
+  await shutdownController.handleShutdown('SIGTERM');
+  assert.equal(serverClosed, false);
+  assert.equal(poolEnded, false);
+
+  // Cleanup listeners
+  shutdownController.cleanupListeners();
+});
+
 
 
 

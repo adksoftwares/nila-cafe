@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import { pool, demoMode } from './db.js';
 import { apiLimiter, JWT_SECRET } from './middleware/auth.js';
 import { logger, httpLogger } from './utils/logger.js';
+import { getHealthDiagnostics, setupGracefulShutdown } from './utils/health.js';
 
 import authRouter from './routes/auth.js';
 import productsRouter from './routes/products.js';
@@ -44,20 +45,38 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(httpLogger);
 
-// ------------------- API ROUTES ------------------- //
+// ------------------- HEALTH & DIAGNOSTIC ROUTES ------------------- //
 
-// Health Check
-app.get('/api/health', async (req, res) => {
-  let database = 'demo-mode';
-  if (pool) {
-    try {
-      await pool.query('SELECT 1');
-      database = 'connected';
-    } catch {
-      database = 'disconnected';
-    }
+let shutdownHandler = null;
+
+// Liveness probe (Kubernetes / Docker)
+app.get('/api/health/liveness', (req, res) => {
+  res.json({ status: 'alive', timestamp: new Date().toISOString() });
+});
+
+// Readiness probe
+app.get('/api/health/readiness', async (req, res) => {
+  const isShuttingDown = shutdownHandler ? shutdownHandler.isTerminating() : false;
+  const diagnostics = await getHealthDiagnostics({ pool, demoMode, isShuttingDown });
+  if (diagnostics.httpStatus !== 200) {
+    return res.status(diagnostics.httpStatus).json({
+      status: diagnostics.body.status,
+      database: diagnostics.body.database,
+      ready: false
+    });
   }
-  res.json({ status: 'ok', database, mode: demoMode ? 'demo' : 'database' });
+  res.json({
+    status: 'ready',
+    database: diagnostics.body.database,
+    ready: true
+  });
+});
+
+// Comprehensive Health & Diagnostics
+app.get('/api/health', async (req, res) => {
+  const isShuttingDown = shutdownHandler ? shutdownHandler.isTerminating() : false;
+  const diagnostics = await getHealthDiagnostics({ pool, demoMode, isShuttingDown });
+  res.status(diagnostics.httpStatus).json(diagnostics.body);
 });
 
 // Domain Routers
@@ -84,9 +103,10 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found.' }));
 let server = null;
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(PORT, () => {
-    console.log(`POS API listening on http://localhost:${PORT} (${demoMode ? 'demo mode' : 'PostgreSQL mode'})`);
+    logger.info(`POS API listening on http://localhost:${PORT} (${demoMode ? 'demo mode' : 'PostgreSQL mode'})`);
   });
+  shutdownHandler = setupGracefulShutdown({ server, pool, loggerInstance: logger });
 }
 
-export { app, server };
+export { app, server, shutdownHandler };
 export default app;

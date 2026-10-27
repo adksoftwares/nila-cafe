@@ -31,6 +31,6 @@ export const httpLogger = pinoHttp({
     };
   },
   autoLogging: {
-    ignore: (req) => req.url === '/api/health' || isTest
+    ignore: (req) => (req.url && req.url.startsWith('/api/health')) || isTest
   }
 });
