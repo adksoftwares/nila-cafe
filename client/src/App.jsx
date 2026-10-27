@@ -85,6 +85,7 @@ function MainPOSApp({
   const [selectedVoidSale, setSelectedVoidSale] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null);
+  const [selectedEditProduct, setSelectedEditProduct] = useState(null);
 
   const [shopName] = useState('ADK Cafe');
   const [adminShops, setAdminShops] = useState([]);
@@ -397,32 +398,77 @@ function MainPOSApp({
 
   const handleSaveProduct = async (formData) => {
     try {
+      const isEdit = Boolean(formData.id);
       if (token && apiMode === 'connected') {
-        const d = await api('/products', {
-          method: 'POST',
-          body: JSON.stringify({
+        if (isEdit) {
+          const d = await api(`/products/${formData.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              ...formData,
+              takeaway_price: Number(formData.takeaway_price),
+              normal_price: Number(formData.normal_price),
+              stock: Number(formData.stock)
+            })
+          });
+          setProducts(old => old.map(p => p.id === formData.id ? d.product : p));
+          flash(`Product "${d.product.name}" updated successfully.`);
+        } else {
+          const d = await api('/products', {
+            method: 'POST',
+            body: JSON.stringify({
+              ...formData,
+              takeaway_price: Number(formData.takeaway_price),
+              normal_price: Number(formData.normal_price),
+              stock: Number(formData.stock)
+            })
+          });
+          setProducts(old => [d.product, ...old]);
+          flash(`Product "${d.product.name}" created successfully.`);
+        }
+      } else {
+        if (isEdit) {
+          setProducts(old => old.map(p => p.id === formData.id ? {
+            ...p,
             ...formData,
             takeaway_price: Number(formData.takeaway_price),
             normal_price: Number(formData.normal_price),
             stock: Number(formData.stock)
-          })
-        });
-        setProducts(old => [...old, d.product]);
-      } else {
-        setProducts(old => [
-          {
+          } : p));
+          flash(`Product "${formData.name}" updated.`);
+        } else {
+          const newProd = {
             ...formData,
             id: 'p' + Date.now(),
             takeaway_price: Number(formData.takeaway_price),
             normal_price: Number(formData.normal_price),
             stock: Number(formData.stock),
             active: true
-          },
-          ...old
-        ]);
+          };
+          setProducts(old => [newProd, ...old]);
+          flash(`Product "${newProd.name}" added.`);
+        }
       }
       setModal('');
-      flash('Product saved successfully.');
+      setSelectedEditProduct(null);
+    } catch (e) {
+      flash(e.message);
+    }
+  };
+
+  const handleDeleteProduct = async (prod) => {
+    if (!prod?.id) return;
+    if (!window.confirm(`Are you sure you want to delete "${prod.name}" (${prod.code})?`)) {
+      return;
+    }
+
+    try {
+      if (token && apiMode === 'connected') {
+        await api(`/products/${prod.id}`, {
+          method: 'DELETE'
+        });
+      }
+      setProducts(old => old.filter(p => p.id !== prod.id));
+      flash(`Product "${prod.name}" deleted.`);
     } catch (e) {
       flash(e.message);
     }
@@ -519,8 +565,16 @@ function MainPOSApp({
               modifiers={modifiers}
               search={search}
               setSearch={setSearch}
-              onOpenAddProduct={() => setModal('product')}
+              onOpenAddProduct={() => {
+                setSelectedEditProduct(null);
+                setModal('product');
+              }}
               onNavigateToBOM={() => setPage('Ingredients & BOM')}
+              onEditProduct={(p) => {
+                setSelectedEditProduct(p);
+                setModal('product');
+              }}
+              onDeleteProduct={handleDeleteProduct}
             />
           )}
 
@@ -602,8 +656,12 @@ function MainPOSApp({
 
       {modal === 'product' && (
         <ProductModal
+          product={selectedEditProduct}
           onSave={handleSaveProduct}
-          onClose={() => setModal('')}
+          onClose={() => {
+            setModal('');
+            setSelectedEditProduct(null);
+          }}
         />
       )}
 

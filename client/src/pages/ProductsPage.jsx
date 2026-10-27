@@ -1,5 +1,5 @@
 import React from 'react';
-import { Package, Check, Activity, Wallet, Plus, Search, Layers, Sliders } from 'lucide-react';
+import { Package, Check, Activity, Wallet, Plus, Search, Layers, Sliders, Pencil, Trash2 } from 'lucide-react';
 import StatCard from '../components/StatCard.jsx';
 import { money } from '../utils/formatters.js';
 
@@ -10,7 +10,9 @@ export default function ProductsPage({
   search,
   setSearch,
   onOpenAddProduct,
-  onNavigateToBOM
+  onNavigateToBOM,
+  onEditProduct,
+  onDeleteProduct
 }) {
   const visible = products.filter(
     p =>
@@ -75,7 +77,8 @@ export default function ProductsPage({
                 <th>DINING PRICE</th>
                 <th>STOCK</th>
                 <th>STATUS</th>
-                <th style={{ textAlign: 'right' }}>BOM & MODIFIERS</th>
+                <th style={{ textAlign: 'center' }}>BOM & MODIFIERS</th>
+                <th style={{ textAlign: 'right' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -102,7 +105,7 @@ export default function ProductsPage({
                     <td>
                       <span className="pill success">Active</span>
                     </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td style={{ textAlign: 'center' }}>
                       <button
                         type="button"
                         className="secondary-btn small"
@@ -115,6 +118,49 @@ export default function ProductsPage({
                             {linkedMods.length} mods
                           </span>
                         )}
+                      </button>
+                    </td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => onEditProduct?.(p)}
+                        title={`Edit ${p.name}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #bfdbfe',
+                          background: '#eff6ff',
+                          color: '#2563eb',
+                          cursor: 'pointer',
+                          marginRight: '6px'
+                        }}
+                      >
+                        <Pencil size={13} />
+                        <span style={{ fontSize: '11px', fontWeight: 600, marginLeft: '3px' }}>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => onDeleteProduct?.(p)}
+                        title={`Delete ${p.name}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '5px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #fecdd3',
+                          background: '#fff1f2',
+                          color: '#e11d48',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Trash2 size={13} />
+                        <span style={{ fontSize: '11px', fontWeight: 600, marginLeft: '3px' }}>Delete</span>
                       </button>
                     </td>
                   </tr>

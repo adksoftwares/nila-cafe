@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 
-export default function ProductModal({ onSave, onClose }) {
+export default function ProductModal({ product = null, onSave, onClose }) {
+  const isEdit = Boolean(product?.id);
+
   const [form, setForm] = useState({
-    code: '',
-    name: '',
-    category: 'General',
-    takeaway_price: '',
-    normal_price: '',
-    stock: '0'
+    id: product?.id || null,
+    code: product?.code || '',
+    name: product?.name || '',
+    category: product?.category || 'General',
+    takeaway_price: product?.takeaway_price != null ? String(product.takeaway_price) : '',
+    normal_price: product?.normal_price != null ? String(product.normal_price) : '',
+    stock: product?.stock != null ? String(product.stock) : '0'
   });
 
   const handleSubmit = (e) => {
@@ -21,8 +24,8 @@ export default function ProductModal({ onSave, onClose }) {
       <form className="modal" onSubmit={handleSubmit} onClick={e => e.stopPropagation()}>
         <div className="modal-heading">
           <div>
-            <span className="eyebrow">INVENTORY</span>
-            <h2>Add a product</h2>
+            <span className="eyebrow">{isEdit ? 'EDIT INVENTORY' : 'INVENTORY'}</span>
+            <h2>{isEdit ? 'Edit Product' : 'Add a product'}</h2>
           </div>
           <button type="button" className="icon-btn" onClick={onClose}>
             <X size={19} />
@@ -95,7 +98,7 @@ export default function ProductModal({ onSave, onClose }) {
             Cancel
           </button>
           <button type="submit" className="primary-btn">
-            Save product
+            {isEdit ? 'Update product' : 'Save product'}
           </button>
         </div>
       </form>
