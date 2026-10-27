@@ -55,6 +55,7 @@ export default function CartPanel({
     totalItemCount,
     pointsToEarn,
     unitPrice,
+    getItemUnitPrice,
     changeQty,
     changeNotes,
     removeItem
@@ -212,85 +213,108 @@ export default function CartPanel({
             <p>Select products from the catalog to get started.</p>
           </div>
         ) : (
-          cart.map(i => (
-            <div className="cart-item" key={i.product.id} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', width: '100%' }}>
-                <div className="item-icon">{i.product.name[0]}</div>
-                <div className="item-details">
-                  <strong>{i.product.name}</strong>
-                  <small>{money(unitPrice(i.product))} each</small>
-                  <div className="qty-control">
-                    <button onClick={() => changeQty(i.product.id, i.qty - 1)}>
-                      <Minus size={12} />
-                    </button>
-                    <input
-                      aria-label="Quantity"
-                      type="number"
-                      min="1"
-                      value={i.qty}
-                      onChange={e => changeQty(i.product.id, e.target.value)}
-                    />
-                    <button onClick={() => changeQty(i.product.id, i.qty + 1)}>
-                      <Plus size={12} />
+          cart.map(i => {
+            const itemKey = i.cartItemId || i.product.id;
+            const price = getItemUnitPrice ? getItemUnitPrice(i) : unitPrice(i.product);
+            return (
+              <div className="cart-item" key={itemKey} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', width: '100%' }}>
+                  <div className="item-icon">{i.product.name[0]}</div>
+                  <div className="item-details">
+                    <strong>{i.product.name}</strong>
+                    {i.modifiers && i.modifiers.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '2px' }}>
+                        {i.modifiers.map(m => (
+                          <span
+                            key={m.id}
+                            style={{
+                              fontSize: '9px',
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              borderRadius: '3px',
+                              padding: '1px 4px'
+                            }}
+                          >
+                            +{m.name} {m.price > 0 ? `(${money(m.price)})` : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <small>{money(price)} each</small>
+                    <div className="qty-control">
+                      <button onClick={() => changeQty(itemKey, i.qty - 1)}>
+                        <Minus size={12} />
+                      </button>
+                      <input
+                        aria-label="Quantity"
+                        type="number"
+                        min="1"
+                        value={i.qty}
+                        onChange={e => changeQty(itemKey, e.target.value)}
+                      />
+                      <button onClick={() => changeQty(itemKey, i.qty + 1)}>
+                        <Plus size={12} />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="item-right">
+                    <strong>{money(price * i.qty)}</strong>
+                    <button
+                      className="remove-btn"
+                      onClick={() => removeItem(itemKey)}
+                      title="Remove item"
+                    >
+                      <X size={14} />
                     </button>
                   </div>
                 </div>
-                <div className="item-right">
-                  <strong>{money(unitPrice(i.product) * i.qty)}</strong>
-                  <button
-                    className="remove-btn"
-                    onClick={() => removeItem(i.product.id)}
-                    title="Remove item"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              </div>
 
-              {/* Kitchen Note / Modifier */}
-              <div style={{ marginTop: '6px', paddingLeft: '43px' }}>
-                {activeNoteItemId === i.product.id ? (
-                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. Less sugar, Oat milk, Extra hot"
-                      value={i.notes || ''}
-                      onChange={e => changeNotes(i.product.id, e.target.value)}
-                      style={{ fontSize: '10px', height: '24px', padding: '0 6px', border: '1px solid #cbd5e1', borderRadius: '4px', flex: 1 }}
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setActiveNoteItemId(null)}
-                      style={{ fontSize: '9px', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#f1f5f9', padding: '3px 6px' }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveNoteItemId(i.product.id)}
-                      style={{
-                        border: 0,
-                        background: 'transparent',
-                        color: i.notes ? '#3b82f6' : '#94a3b8',
-                        fontSize: '10px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        padding: 0
-                      }}
-                    >
-                      <FileText size={11} />
-                      {i.notes ? `Note: "${i.notes}"` : '+ Add kitchen note'}
-                    </button>
-                  </div>
-                )}
+                {/* Kitchen Note / Modifier */}
+                <div style={{ marginTop: '6px', paddingLeft: '43px' }}>
+                  {activeNoteItemId === itemKey ? (
+                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="e.g. Less sugar, Oat milk, Extra hot"
+                        value={i.notes || ''}
+                        onChange={e => changeNotes(itemKey, e.target.value)}
+                        style={{ fontSize: '10px', height: '24px', padding: '0 6px', border: '1px solid #cbd5e1', borderRadius: '4px', flex: 1 }}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteItemId(null)}
+                        style={{ fontSize: '9px', border: '1px solid #cbd5e1', borderRadius: '4px', background: '#f1f5f9', padding: '3px 6px' }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveNoteItemId(itemKey)}
+                        style={{
+                          border: 0,
+                          background: 'transparent',
+                          color: i.notes ? '#3b82f6' : '#94a3b8',
+                          fontSize: '10px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          padding: 0
+                        }}
+                      >
+                        <FileText size={11} />
+                        {i.notes ? `Note: "${i.notes}"` : '+ Add kitchen note'}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 

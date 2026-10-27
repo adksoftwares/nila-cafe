@@ -136,6 +136,12 @@ export function generateReceiptESCPOS(sale, options = {}) {
     const itemTotal = fmtMoney(item.total || (item.price * qty));
     const itemHeader = `${qty}x ${item.name || item.product_name || 'Item'}`;
     addText(formatTwoColumns(itemHeader, itemTotal, cols));
+    if (Array.isArray(item.modifiers) && item.modifiers.length > 0) {
+      for (const m of item.modifiers) {
+        const modPrice = Number(m.price) > 0 ? ` (+${fmtMoney(m.price)})` : '';
+        addText(`  + ${m.name}${modPrice}`);
+      }
+    }
     if (item.notes) {
       addText(`  * Note: ${item.notes}`);
     }

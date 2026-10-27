@@ -77,12 +77,15 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         stock: 50
       };
       const q = Math.max(1, Number(item.quantity) || 1);
-      const price = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+      const basePrice = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+      const itemModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+      const modifiersExtra = itemModifiers.reduce((acc, m) => acc + (Number(m.price) || 0), 0);
+      const price = Math.round((basePrice + modifiersExtra) * 100) / 100;
       const lineSub = Math.round(price * q * 100) / 100;
       subtotal = Math.round((subtotal + lineSub) * 100) / 100;
       p.stock = Math.max(0, p.stock - q);
 
-      // Raw Ingredient Recipe BOM auto-depletion
+      // Raw Ingredient Recipe BOM auto-depletion (base product)
       const matchingRecipes = demoRecipes.filter(r => r.product_id === (p.id || item.productId));
       for (const rec of matchingRecipes) {
         const ing = demoIngredients.find(i => i.id === rec.ingredient_id);
@@ -101,6 +104,26 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         }
       }
 
+      // Modifiers BOM auto-depletion (paid add-ons)
+      for (const mod of itemModifiers) {
+        if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+          const ing = demoIngredients.find(i => i.id === mod.ingredient_id);
+          if (ing) {
+            const needed = Math.round(Number(mod.ingredient_qty) * q * 100) / 100;
+            ing.stock = Math.max(0, Math.round((Number(ing.stock) - needed) * 100) / 100);
+            demoIngredientMovements.push({
+              id: 'imov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+              shop_id: req.user.shop_id,
+              ingredient_id: ing.id,
+              delta_qty: -needed,
+              reason: 'sale_depletion',
+              reference_id: null,
+              created_at: new Date().toISOString()
+            });
+          }
+        }
+      }
+
       lines.push({
         name: p.name,
         code: p.code,
@@ -108,6 +131,7 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         price,
         discount: 0,
         notes: item.notes || '',
+        modifiers: itemModifiers,
         total: lineSub
       });
     }
@@ -224,7 +248,8 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         name: l.name,
         code: l.code,
         qty: l.quantity,
-        notes: l.notes
+        notes: l.notes,
+        modifiers: l.modifiers || []
       }))
     });
 
@@ -288,13 +313,16 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
 
       p.stock -= q; // Deduct in-memory for multiple items referencing same product
 
-      const price = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+      const basePrice = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+      const itemModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+      const modifiersExtra = itemModifiers.reduce((acc, m) => acc + (Number(m.price) || 0), 0);
+      const price = Math.round((basePrice + modifiersExtra) * 100) / 100;
       const lineSubtotal = Math.round(price * q * 100) / 100;
       const lineDiscount = Math.round(Math.min(lineSubtotal, d) * 100) / 100;
       const lineTotal = Math.round((lineSubtotal - lineDiscount) * 100) / 100;
 
       subtotal = Math.round((subtotal + lineSubtotal) * 100) / 100;
-      lines.push({ p, q, price, lineDiscount, total: lineTotal, notes });
+      lines.push({ p, q, price, lineDiscount, total: lineTotal, notes, modifiers: itemModifiers });
     }
 
     // Step 4: Check Promotion Code
@@ -450,8 +478,8 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
     // Insert sale items, audit stock movement ledger, and update database stock
     for (const l of lines) {
       await client.query(
-        'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-        [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.lineDiscount, l.notes, l.total]
+        'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total, modifiers) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
+        [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.lineDiscount, l.notes, l.total, JSON.stringify(l.modifiers || [])]
       );
 
       // Double-entry stock ledger
@@ -466,7 +494,7 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         [l.q, l.p.id]
       );
 
-      // Bill of Materials (BOM) Auto-depletion for ingredients linked to this product
+      // 1. Bill of Materials (BOM) Auto-depletion for ingredients linked to this product
       const productRecipes = (await client.query(
         'SELECT ingredient_id, quantity_required FROM recipe_items WHERE product_id = $1 AND shop_id = $2',
         [l.p.id, req.user.shop_id]
@@ -483,6 +511,23 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
           [req.user.shop_id, rec.ingredient_id, -ingQty, 'sale_depletion', sale.bill_number]
         );
       }
+
+      // 2. Modifiers BOM Auto-depletion for ingredients linked to selected modifiers
+      if (Array.isArray(l.modifiers)) {
+        for (const mod of l.modifiers) {
+          if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+            const modIngQty = Math.round(Number(mod.ingredient_qty) * l.q * 100) / 100;
+            await client.query(
+              'UPDATE ingredients SET stock = stock - $1 WHERE id = $2 AND shop_id = $3',
+              [modIngQty, mod.ingredient_id, req.user.shop_id]
+            );
+            await client.query(
+              'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+              [req.user.shop_id, mod.ingredient_id, -modIngQty, 'sale_depletion', sale.bill_number]
+            );
+          }
+        }
+      }
     }
 
     const responsePayload = {
@@ -494,6 +539,7 @@ router.post('/', auth, roles('owner', 'manager', 'cashier', 'waiter'), async (re
         price: l.price,
         discount: l.lineDiscount,
         notes: l.notes,
+        modifiers: l.modifiers || [],
         total: l.total
       })),
       payments: recordedPayments.map(p => ({
@@ -696,7 +742,7 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
             [item.quantity, item.product_id]
           );
 
-          // Restock BOM raw ingredients
+          // 1. Restock BOM raw ingredients (base recipe)
           const productRecipes = (await client.query(
             'SELECT ingredient_id, quantity_required FROM recipe_items WHERE product_id = $1 AND shop_id = $2',
             [item.product_id, req.user.shop_id]
@@ -712,6 +758,27 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
               'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
               [req.user.shop_id, rec.ingredient_id, ingQty, 'void_restock', sale.bill_number]
             );
+          }
+
+          // 2. Restock Modifier BOM raw ingredients
+          let itemModifiers = [];
+          try {
+            itemModifiers = typeof item.modifiers === 'string' ? JSON.parse(item.modifiers) : (item.modifiers || []);
+          } catch {}
+          if (Array.isArray(itemModifiers)) {
+            for (const mod of itemModifiers) {
+              if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+                const modRestoreQty = Math.round(Number(mod.ingredient_qty) * item.quantity * 100) / 100;
+                await client.query(
+                  'UPDATE ingredients SET stock = stock + $1 WHERE id = $2 AND shop_id = $3',
+                  [modRestoreQty, mod.ingredient_id, req.user.shop_id]
+                );
+                await client.query(
+                  'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+                  [req.user.shop_id, mod.ingredient_id, modRestoreQty, 'void_restock', sale.bill_number]
+                );
+              }
+            }
           }
         }
 
@@ -796,7 +863,7 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
           prod.stock += itemQty;
         }
 
-        // Restock BOM raw ingredients
+        // 1. Restock BOM raw ingredients (base recipe)
         const prodId = prod?.id || item.productId;
         const matchingRecipes = demoRecipes.filter(r => r.product_id === prodId);
         for (const rec of matchingRecipes) {
@@ -813,6 +880,27 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), a
               reference_id: sale.bill_number,
               created_at: new Date().toISOString()
             });
+          }
+        }
+
+        // 2. Restock Modifier BOM raw ingredients
+        const itemModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+        for (const mod of itemModifiers) {
+          if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+            const ing = demoIngredients.find(i => i.id === mod.ingredient_id);
+            if (ing) {
+              const modRestoreQty = Math.round(Number(mod.ingredient_qty) * itemQty * 100) / 100;
+              ing.stock = Math.round((Number(ing.stock) + modRestoreQty) * 100) / 100;
+              demoIngredientMovements.push({
+                id: 'imov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                shop_id: req.user.shop_id,
+                ingredient_id: ing.id,
+                delta_qty: modRestoreQty,
+                reason: 'void_restock',
+                reference_id: sale.bill_number,
+                created_at: new Date().toISOString()
+              });
+            }
           }
         }
       }

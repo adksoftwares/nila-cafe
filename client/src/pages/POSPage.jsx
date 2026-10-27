@@ -11,6 +11,7 @@ export default function POSPage({
   categories,
   search,
   setSearch,
+  modifiers = [],
   customers,
   promotions,
   onOpenAddCustomer,
@@ -53,6 +54,7 @@ export default function POSPage({
           categories={categories}
           search={search}
           setSearch={setSearch}
+          modifiers={modifiers}
         />
 
         <CartPanel

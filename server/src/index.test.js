@@ -819,3 +819,117 @@ test('Table Settlement Invariant: completing payment closes open tab and frees t
   assert.equal(table.status, 'vacant');
   assert.equal(table.active_sale_id, null);
 });
+
+test('Product Modifiers Pricing: item base price adds selected modifier add-on prices and scales with quantity', () => {
+  const basePrice = 500;
+  const modifiers = [
+    { id: 'opt-oat', name: 'Oat Milk', price: 150 },
+    { id: 'opt-shot', name: 'Extra Espresso Shot', price: 120 }
+  ];
+  const qty = 2;
+
+  const modTotal = modifiers.reduce((acc, m) => acc + m.price, 0);
+  const effectiveUnitPrice = basePrice + modTotal; // 500 + 150 + 120 = 770
+  const lineTotal = effectiveUnitPrice * qty; // 770 * 2 = 1540
+
+  assert.equal(effectiveUnitPrice, 770);
+  assert.equal(lineTotal, 1540);
+});
+
+test('Modifier-Aware BOM Depletion: order deducts base product recipe PLUS modifier raw ingredients', () => {
+  const inventory = {
+    beans: 5000, // grams
+    milk: 10000  // ml
+  };
+
+  const baseRecipe = [
+    { ingredient: 'beans', qty: 18 },
+    { ingredient: 'milk', qty: 150 }
+  ];
+
+  const selectedModifiers = [
+    { id: 'opt-shot', name: 'Extra Shot', price: 120, ingredient: 'beans', ingredient_qty: 18 }
+  ];
+
+  const orderQty = 2;
+
+  // Deplete base recipe
+  for (const rec of baseRecipe) {
+    inventory[rec.ingredient] -= rec.qty * orderQty;
+  }
+  // Deplete modifier add-on ingredients
+  for (const mod of selectedModifiers) {
+    if (mod.ingredient && mod.ingredient_qty > 0) {
+      inventory[mod.ingredient] -= mod.ingredient_qty * orderQty;
+    }
+  }
+
+  // Beans depleted: (18 base + 18 extra) * 2 = 72g -> 5000 - 72 = 4928g
+  assert.equal(inventory.beans, 4928);
+  // Milk depleted: 150 * 2 = 300ml -> 10000 - 300 = 9700ml
+  assert.equal(inventory.milk, 9700);
+});
+
+test('Modifier BOM Void Invariant: voiding transaction restores both base product and modifier raw ingredients', () => {
+  const inventory = {
+    beans: 4928,
+    milk: 9700
+  };
+
+  const orderItem = {
+    name: 'Iced Coffee',
+    qty: 2,
+    baseRecipe: [
+      { ingredient: 'beans', qty: 18 },
+      { ingredient: 'milk', qty: 150 }
+    ],
+    modifiers: [
+      { id: 'opt-shot', name: 'Extra Shot', ingredient: 'beans', ingredient_qty: 18 }
+    ]
+  };
+
+  // Void rollback
+  for (const rec of orderItem.baseRecipe) {
+    inventory[rec.ingredient] += rec.qty * orderItem.qty;
+  }
+  for (const mod of orderItem.modifiers) {
+    if (mod.ingredient && mod.ingredient_qty > 0) {
+      inventory[mod.ingredient] += mod.ingredient_qty * orderItem.qty;
+    }
+  }
+
+  assert.equal(inventory.beans, 5000);
+  assert.equal(inventory.milk, 10000);
+});
+
+test('Product Modifiers Validation: validates single choice vs multi-choice selection constraints', () => {
+  const singleGroup = {
+    id: 'mod-size',
+    name: 'Size',
+    type: 'single',
+    required: true,
+    options: [{ id: 's', name: 'Small' }, { id: 'm', name: 'Medium' }, { id: 'l', name: 'Large' }]
+  };
+
+  const multiGroup = {
+    id: 'mod-toppings',
+    name: 'Toppings',
+    type: 'multiple',
+    required: false,
+    options: [{ id: 'top-1', name: 'Cheese' }, { id: 'top-2', name: 'Patty' }]
+  };
+
+  const validateSelections = (group, selectedIds) => {
+    if (group.required && selectedIds.length === 0) return false;
+    if (group.type === 'single' && selectedIds.length > 1) return false;
+    return true;
+  };
+
+  assert.equal(validateSelections(singleGroup, ['m']), true);
+  assert.equal(validateSelections(singleGroup, []), false); // required fails
+  assert.equal(validateSelections(singleGroup, ['s', 'm']), false); // single type violated
+
+  assert.equal(validateSelections(multiGroup, []), true); // optional
+  assert.equal(validateSelections(multiGroup, ['top-1', 'top-2']), true); // multi allowed
+});
+

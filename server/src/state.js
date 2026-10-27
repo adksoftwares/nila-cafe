@@ -231,3 +231,49 @@ export const demoTables = [
   { id: 'tab-12', shop_id: 'shop-demo', table_number: 'Balcony 2', capacity: 4, status: 'vacant', active_sale_id: null },
   { id: 'tab-13', shop_id: 'shop-demo', table_number: 'VIP Lounge', capacity: 10, status: 'vacant', active_sale_id: null }
 ];
+
+export let demoModifiers = [
+  {
+    id: 'mod-1',
+    shop_id: 'shop-demo',
+    product_id: 'p5', // Iced Coffee
+    name: 'Milk Choice',
+    type: 'single',
+    required: true,
+    options: [
+      { id: 'opt-milk-whole', name: 'Fresh Milk', price: 0, ingredient_id: 'ing-5', ingredient_qty: 150 },
+      { id: 'opt-milk-oat', name: 'Oat Milk (+150 LKR)', price: 150, ingredient_id: null, ingredient_qty: 0 }
+    ],
+    active: true
+  },
+  {
+    id: 'mod-2',
+    shop_id: 'shop-demo',
+    product_id: 'p5', // Iced Coffee
+    name: 'Espresso Boost',
+    type: 'multiple',
+    required: false,
+    options: [
+      { id: 'opt-extra-shot', name: 'Extra Espresso Shot (+120 LKR)', price: 120, ingredient_id: 'ing-4', ingredient_qty: 18 }
+    ],
+    active: true
+  },
+  {
+    id: 'mod-3',
+    shop_id: 'shop-demo',
+    product_id: 'p1', // Chicken Burger
+    name: 'Burger Add-Ons',
+    type: 'multiple',
+    required: false,
+    options: [
+      { id: 'opt-cheese', name: 'Extra Cheese Slice (+80 LKR)', price: 80, ingredient_id: 'ing-3', ingredient_qty: 1 },
+      { id: 'opt-patty', name: 'Extra Chicken Patty (+350 LKR)', price: 350, ingredient_id: 'ing-1', ingredient_qty: 1 }
+    ],
+    active: true
+  }
+];
+
+export function setDemoModifiers(mods) {
+  demoModifiers = mods;
+}
+

@@ -23,11 +23,16 @@ export function CartProvider({ children }) {
     vat_rate: 18.0
   });
 
-  const unitPrice = (p) =>
-    Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+  const unitPrice = (p, modifiers = []) => {
+    const base = Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+    const modsExtra = (modifiers || []).reduce((sum, m) => sum + (Number(m.price) || 0), 0);
+    return base + modsExtra;
+  };
+
+  const getItemUnitPrice = (item) => unitPrice(item.product, item.modifiers);
 
   const subtotal = useMemo(() => {
-    return cart.reduce((s, i) => s + unitPrice(i.product) * i.qty, 0);
+    return cart.reduce((s, i) => s + getItemUnitPrice(i) * i.qty, 0);
   }, [cart, orderType]);
 
   // 1. Manual Discount
@@ -75,33 +80,45 @@ export function CartProvider({ children }) {
   const pointsToEarn = useMemo(() => (selectedCustomer ? Math.floor(total / 100) : 0), [selectedCustomer, total]);
 
   // Actions
-  const addToCart = (product) => {
+  const addToCart = (product, selectedModifiers = [], notes = '') => {
+    const modSig = (selectedModifiers || []).map(m => m.id).sort().join('|');
     setCart(prev => {
-      const idx = prev.findIndex(x => x.product.id === product.id);
+      const idx = prev.findIndex(
+        x => x.product.id === product.id && (x.modifiers || []).map(m => m.id).sort().join('|') === modSig
+      );
       if (idx >= 0) {
         return prev.map((item, i) =>
           i === idx ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [{ product, qty: 1, notes: '' }, ...prev];
+      return [
+        {
+          cartItemId: 'ci-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          product,
+          qty: 1,
+          notes: notes || '',
+          modifiers: selectedModifiers || []
+        },
+        ...prev
+      ];
     });
   };
 
-  const changeQty = (id, newQty) => {
+  const changeQty = (key, newQty) => {
     const qty = Math.max(1, Math.min(999, Number(newQty) || 1));
     setCart(prev =>
-      prev.map(i => (i.product.id === id ? { ...i, qty } : i))
+      prev.map(i => ((i.cartItemId === key || i.product.id === key) ? { ...i, qty } : i))
     );
   };
 
-  const changeNotes = (id, notes) => {
+  const changeNotes = (key, notes) => {
     setCart(prev =>
-      prev.map(i => (i.product.id === id ? { ...i, notes } : i))
+      prev.map(i => ((i.cartItemId === key || i.product.id === key) ? { ...i, notes } : i))
     );
   };
 
-  const removeItem = (id) => {
-    setCart(prev => prev.filter(i => i.product.id !== id));
+  const removeItem = (key) => {
+    setCart(prev => prev.filter(i => i.cartItemId !== key && i.product.id !== key));
   };
 
   const clearCart = () => {
@@ -162,6 +179,7 @@ export function CartProvider({ children }) {
     totalItemCount,
     pointsToEarn,
     unitPrice,
+    getItemUnitPrice,
     addToCart,
     changeQty,
     changeNotes,

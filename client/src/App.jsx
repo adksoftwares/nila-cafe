@@ -77,6 +77,7 @@ function MainPOSApp({
   const [category, setCategory] = useState('All items');
   const [customers, setCustomers] = useState([]);
   const [promotions, setPromotions] = useState([]);
+  const [modifiers, setModifiers] = useState([]);
 
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
@@ -113,6 +114,15 @@ function MainPOSApp({
     api('/promotions')
       .then(d => {
         if (d.promotions) setPromotions(d.promotions);
+      })
+      .catch(() => {});
+  };
+
+  const loadModifiers = () => {
+    if (!token || !user || user.role === 'admin') return;
+    api('/modifiers')
+      .then(d => {
+        if (d.modifiers) setModifiers(d.modifiers);
       })
       .catch(() => {});
   };
@@ -154,6 +164,7 @@ function MainPOSApp({
     loadSales();
     loadCustomers();
     loadPromotions();
+    loadModifiers();
     loadShopSettings();
   }, [user, token]);
 
@@ -182,7 +193,8 @@ function MainPOSApp({
           items: cart.map(i => ({
             productId: i.product.id,
             quantity: i.qty,
-            notes: i.notes || ''
+            notes: i.notes || '',
+            modifiers: i.modifiers || []
           })),
           discount: details.billDiscount,
           customerId: details.customerId
@@ -257,12 +269,15 @@ function MainPOSApp({
       payments: payments,
       created_at: new Date().toISOString(),
       items: cart.map(i => {
-        const price = Number(orderType === 'takeaway' ? i.product.takeaway_price : i.product.normal_price);
+        const base = Number(orderType === 'takeaway' ? i.product.takeaway_price : i.product.normal_price);
+        const modsExtra = (i.modifiers || []).reduce((s, m) => s + (Number(m.price) || 0), 0);
+        const price = base + modsExtra;
         return {
           name: i.product.name,
           code: i.product.code,
           qty: i.qty,
           price,
+          modifiers: i.modifiers || [],
           notes: i.notes || '',
           total: price * i.qty
         };
@@ -276,6 +291,7 @@ function MainPOSApp({
         productId: i.product.id,
         quantity: i.qty,
         notes: i.notes || '',
+        modifiers: i.modifiers || [],
         discount: 0
       })),
       discount: billDiscount,
@@ -476,6 +492,7 @@ function MainPOSApp({
               categories={categories}
               search={search}
               setSearch={setSearch}
+              modifiers={modifiers}
               customers={customers}
               promotions={promotions}
               onOpenAddCustomer={() => setModal('customer')}

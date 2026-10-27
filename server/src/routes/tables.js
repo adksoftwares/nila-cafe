@@ -117,12 +117,15 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
           stock: 50
         };
         const q = Math.max(1, Number(item.quantity) || 1);
-        const price = Number(p.normal_price);
+        const basePrice = Number(p.normal_price);
+        const itemModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+        const modsExtra = itemModifiers.reduce((acc, m) => acc + (Number(m.price) || 0), 0);
+        const price = Math.round((basePrice + modsExtra) * 100) / 100;
         const lineSub = Math.round(price * q * 100) / 100;
         subtotal = Math.round((subtotal + lineSub) * 100) / 100;
         p.stock = Math.max(0, p.stock - q);
 
-        // BOM auto-depletion
+        // BOM auto-depletion (base product)
         const matchingRecipes = demoRecipes.filter(r => r.product_id === (p.id || item.productId));
         for (const rec of matchingRecipes) {
           const ing = demoIngredients.find(i => i.id === rec.ingredient_id);
@@ -141,6 +144,26 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
           }
         }
 
+        // Modifiers BOM auto-depletion
+        for (const mod of itemModifiers) {
+          if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+            const ing = demoIngredients.find(i => i.id === mod.ingredient_id);
+            if (ing) {
+              const needed = Math.round(Number(mod.ingredient_qty) * q * 100) / 100;
+              ing.stock = Math.max(0, Math.round((Number(ing.stock) - needed) * 100) / 100);
+              demoIngredientMovements.push({
+                id: 'imov-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                shop_id: req.user.shop_id,
+                ingredient_id: ing.id,
+                delta_qty: -needed,
+                reason: 'sale_depletion',
+                reference_id: tableNumber,
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+        }
+
         lines.push({
           name: p.name,
           code: p.code,
@@ -148,6 +171,7 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
           price,
           discount: 0,
           notes: item.notes || '',
+          modifiers: itemModifiers,
           total: lineSub
         });
       }
@@ -265,10 +289,13 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
         if (p.stock < q) throw new Error(`Insufficient stock for "${p.name}". Available: ${p.stock}`);
         p.stock -= q;
 
-        const price = Number(p.normal_price);
+        const basePrice = Number(p.normal_price);
+        const itemModifiers = Array.isArray(item.modifiers) ? item.modifiers : [];
+        const modsExtra = itemModifiers.reduce((acc, m) => acc + (Number(m.price) || 0), 0);
+        const price = Math.round((basePrice + modsExtra) * 100) / 100;
         const lineSubtotal = Math.round(price * q * 100) / 100;
         subtotal = Math.round((subtotal + lineSubtotal) * 100) / 100;
-        lines.push({ p, q, price, total: lineSubtotal, notes: item.notes || null });
+        lines.push({ p, q, price, total: lineSubtotal, notes: item.notes || null, modifiers: itemModifiers });
       }
 
       // Fetch shop tax configuration
@@ -318,8 +345,8 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
       // Insert sale items and audit stock movements
       for (const l of lines) {
         await client.query(
-          'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total) VALUES($1, $2, $3, $4, $5, $6, 0, $7, $8)',
-          [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.notes, l.total]
+          'INSERT INTO sale_items(sale_id, product_id, product_code, product_name, quantity, unit_price, discount, notes, line_total, modifiers) VALUES($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)',
+          [sale.id, l.p.id, l.p.code, l.p.name, l.q, l.price, l.notes, l.total, JSON.stringify(l.modifiers || [])]
         );
         await client.query(
           'INSERT INTO stock_movements(shop_id, product_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
@@ -330,7 +357,7 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
           [l.q, l.p.id]
         );
 
-        // BOM raw ingredient auto-depletion
+        // 1. BOM raw ingredient auto-depletion (base product)
         const recipes = (await client.query(
           'SELECT ingredient_id, quantity_required FROM recipe_items WHERE product_id = $1 AND shop_id = $2',
           [l.p.id, req.user.shop_id]
@@ -346,6 +373,23 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), async
             'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
             [req.user.shop_id, rec.ingredient_id, -ingQty, 'sale_depletion', sale.bill_number]
           );
+        }
+
+        // 2. Modifiers BOM auto-depletion
+        if (Array.isArray(l.modifiers)) {
+          for (const mod of l.modifiers) {
+            if (mod.ingredient_id && Number(mod.ingredient_qty) > 0) {
+              const modIngQty = Math.round(Number(mod.ingredient_qty) * l.q * 100) / 100;
+              await client.query(
+                'UPDATE ingredients SET stock = stock - $1 WHERE id = $2 AND shop_id = $3',
+                [modIngQty, mod.ingredient_id, req.user.shop_id]
+              );
+              await client.query(
+                'INSERT INTO ingredient_movements(shop_id, ingredient_id, delta_qty, reason, reference_id) VALUES($1, $2, $3, $4, $5)',
+                [req.user.shop_id, mod.ingredient_id, -modIngQty, 'sale_depletion', sale.bill_number]
+              );
+            }
+          }
         }
       }
 

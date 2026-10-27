@@ -491,3 +491,37 @@ CREATE INDEX IF NOT EXISTS idx_restaurant_tables_status ON restaurant_tables(sho
 
 ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_status_check;
 ALTER TABLE sales ADD CONSTRAINT sales_status_check CHECK(status IN ('open', 'completed', 'voided'));
+
+-- ------------------- PRODUCT MODIFIERS & PAID ADD-ONS ------------------- --
+
+CREATE TABLE IF NOT EXISTS product_modifiers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('single', 'multiple')) DEFAULT 'single',
+  required BOOLEAN NOT NULL DEFAULT FALSE,
+  options JSONB NOT NULL DEFAULT '[]',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS modifiers JSONB NOT NULL DEFAULT '[]';
+
+ALTER TABLE product_modifiers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_modifiers FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS product_modifiers_tenant_isolation ON product_modifiers;
+CREATE POLICY product_modifiers_tenant_isolation ON product_modifiers
+  FOR ALL
+  USING (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  )
+  WITH CHECK (
+    current_setting('app.is_admin', true) = 'true'
+    OR shop_id = NULLIF(current_setting('app.current_shop_id', true), '')::uuid
+  );
+
+CREATE INDEX IF NOT EXISTS idx_product_modifiers_shop ON product_modifiers(shop_id);
+CREATE INDEX IF NOT EXISTS idx_product_modifiers_prod ON product_modifiers(product_id);
+

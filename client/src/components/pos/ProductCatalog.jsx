@@ -1,7 +1,8 @@
-import React, { useRef, useEffect } from 'react';
-import { Search, ChevronDown, Plus } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Search, ChevronDown, Plus, Sparkles } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
 import { useCart } from '../../context/CartContext.jsx';
+import ModifierModal from '../modals/ModifierModal.jsx';
 
 export default function ProductCatalog({
   products,
@@ -10,6 +11,7 @@ export default function ProductCatalog({
   categories,
   search,
   setSearch,
+  modifiers = [],
   orderType: propOrderType,
   onAddProduct: propOnAddProduct
 }) {
@@ -17,6 +19,7 @@ export default function ProductCatalog({
   const orderType = propOrderType || ctxOrderType;
   const onAddProduct = propOnAddProduct || addToCart;
   const searchInputRef = useRef(null);
+  const [activeModifierProduct, setActiveModifierProduct] = useState(null);
 
   // Implement real Cmd+K / Ctrl+K keyboard shortcut!
   useEffect(() => {
@@ -40,6 +43,15 @@ export default function ProductCatalog({
 
   const unitPrice = p =>
     Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
+
+  const handleProductClick = (p) => {
+    const productMods = modifiers.filter(m => !m.product_id || m.product_id === p.id);
+    if (productMods.length > 0) {
+      setActiveModifierProduct(p);
+    } else {
+      onAddProduct(p);
+    }
+  };
 
   return (
     <section className="catalog">
@@ -72,37 +84,45 @@ export default function ProductCatalog({
       </div>
 
       <div className="product-grid">
-        {visible.map((p, i) => (
-          <button
-            className="product-card"
-            key={p.id}
-            onClick={() => onAddProduct(p)}
-          >
-            <div className={'product-art art-' + (i % 6)}>
-              {p.category === 'Drinks' || p.category === 'Beverages'
-                ? '☕'
-                : p.category === 'Pizza'
-                ? '🍕'
-                : p.category === 'Sides'
-                ? '🍟'
-                : p.category === 'Burgers'
-                ? '🍔'
-                : p.category === 'Sandwiches'
-                ? '🥪'
-                : '◉'}
-              <span className="add-circle">
-                <Plus size={15} />
-              </span>
-            </div>
-            <div className="product-meta">
-              <span>{p.category || 'General'}</span>
-              <small>{p.code}</small>
-            </div>
-            <strong>{p.name}</strong>
-            <div className="product-price">{money(unitPrice(p))}</div>
-            <div className="stock-line">{p.stock} in stock</div>
-          </button>
-        ))}
+        {visible.map((p, i) => {
+          const hasMods = modifiers.some(m => !m.product_id || m.product_id === p.id);
+          return (
+            <button
+              className="product-card"
+              key={p.id}
+              onClick={() => handleProductClick(p)}
+            >
+              <div className={'product-art art-' + (i % 6)}>
+                {p.category === 'Drinks' || p.category === 'Beverages'
+                  ? '☕'
+                  : p.category === 'Pizza'
+                  ? '🍕'
+                  : p.category === 'Sides'
+                  ? '🍟'
+                  : p.category === 'Burgers'
+                  ? '🍔'
+                  : p.category === 'Sandwiches'
+                  ? '🥪'
+                  : '◉'}
+                <span className="add-circle">
+                  <Plus size={15} />
+                </span>
+              </div>
+              <div className="product-meta">
+                <span>{p.category || 'General'}</span>
+                {hasMods && (
+                  <span style={{ fontSize: '9px', background: '#eff6ff', color: '#2563eb', padding: '1px 4px', borderRadius: '3px', fontWeight: 600 }}>
+                    Options
+                  </span>
+                )}
+                <small>{p.code}</small>
+              </div>
+              <strong>{p.name}</strong>
+              <div className="product-price">{money(unitPrice(p))}</div>
+              <div className="stock-line">{p.stock} in stock</div>
+            </button>
+          );
+        })}
       </div>
 
       {visible.length === 0 && (
@@ -117,6 +137,19 @@ export default function ProductCatalog({
           Prices shown for <strong>{orderType.toUpperCase()}</strong>
         </span>
       </div>
+
+      {activeModifierProduct && (
+        <ModifierModal
+          product={activeModifierProduct}
+          modifiers={modifiers.filter(m => !m.product_id || m.product_id === activeModifierProduct.id)}
+          orderType={orderType}
+          onConfirm={(p, selectedOptions, notes) => {
+            addToCart(p, selectedOptions, notes);
+            setActiveModifierProduct(null);
+          }}
+          onClose={() => setActiveModifierProduct(null)}
+        />
+      )}
     </section>
   );
 }
