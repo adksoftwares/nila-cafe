@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool, query } from '../db.js';
 import { demoCustomers } from '../state.js';
 import { auth, roles } from '../middleware/auth.js';
+import { recordAuditEvent } from '../utils/audit.js';
 
 const router = Router();
 
@@ -65,6 +66,18 @@ router.post('/', auth, roles('owner', 'manager', 'cashier'), async (req, res) =>
         [req.user.shop_id, cleanName, cleanPhone, cleanEmail],
         req.user
       );
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'CUSTOMER_CREATE',
+        category: 'sales',
+        severity: 'info',
+        entityType: 'customer',
+        entityId: rows[0].id,
+        details: { name: cleanName, phone: cleanPhone }
+      });
       return res.status(201).json({ customer: rows[0] });
     }
 
@@ -85,7 +98,137 @@ router.post('/', auth, roles('owner', 'manager', 'cashier'), async (req, res) =>
       created_at: new Date().toISOString()
     };
     demoCustomers.unshift(newCust);
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'CUSTOMER_CREATE',
+      category: 'sales',
+      severity: 'info',
+      entityType: 'customer',
+      entityId: newCust.id,
+      details: { name: cleanName, phone: cleanPhone }
+    });
+
     res.status(201).json({ customer: newCust });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Customers: Manual Loyalty Points Adjustment
+router.patch('/:id/points', auth, roles('owner', 'manager'), async (req, res) => {
+  const { id } = req.params;
+  const { deltaPoints, reason = 'manual_adjustment' } = req.body;
+  const delta = parseInt(deltaPoints, 10);
+
+  if (!Number.isFinite(delta) || delta === 0) {
+    return res.status(400).json({ error: 'Provide a non-zero integer point adjustment.' });
+  }
+
+  try {
+    if (pool) {
+      const rows = await query(
+        `UPDATE customers
+         SET loyalty_points = GREATEST(0, loyalty_points + $1)
+         WHERE id = $2 AND shop_id = $3
+         RETURNING *`,
+        [delta, id, req.user.shop_id],
+        req.user
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Customer not found.' });
+
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'CUSTOMER_POINTS_ADJUST',
+        category: 'sales',
+        severity: 'warning',
+        entityType: 'customer',
+        entityId: id,
+        details: { customerName: rows[0].name, deltaPoints: delta, newBalance: rows[0].loyalty_points, reason }
+      });
+
+      return res.json({ success: true, customer: rows[0] });
+    }
+
+    const cust = demoCustomers.find(c => c.id === id);
+    if (!cust) return res.status(404).json({ error: 'Customer not found.' });
+
+    cust.loyalty_points = Math.max(0, cust.loyalty_points + delta);
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'CUSTOMER_POINTS_ADJUST',
+      category: 'sales',
+      severity: 'warning',
+      entityType: 'customer',
+      entityId: id,
+      details: { customerName: cust.name, deltaPoints: delta, newBalance: cust.loyalty_points, reason }
+    });
+
+    res.json({ success: true, customer: cust });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Customers: Delete Customer
+router.delete('/:id', auth, roles('owner', 'manager'), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    if (pool) {
+      const rows = await query(
+        'DELETE FROM customers WHERE id = $1 AND shop_id = $2 RETURNING name',
+        [id, req.user.shop_id],
+        req.user
+      );
+      if (!rows.length) return res.status(404).json({ error: 'Customer not found.' });
+
+      await recordAuditEvent({
+        shopId: req.user.shop_id,
+        userId: req.user.sub,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'CUSTOMER_DELETE',
+        category: 'sales',
+        severity: 'warning',
+        entityType: 'customer',
+        entityId: id,
+        details: { customerName: rows[0].name }
+      });
+
+      return res.json({ success: true, message: 'Customer record deleted.' });
+    }
+
+    const idx = demoCustomers.findIndex(c => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Customer not found.' });
+
+    const removed = demoCustomers[idx];
+    demoCustomers.splice(idx, 1);
+
+    await recordAuditEvent({
+      shopId: req.user.shop_id,
+      userId: req.user.sub,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'CUSTOMER_DELETE',
+      category: 'sales',
+      severity: 'warning',
+      entityType: 'customer',
+      entityId: id,
+      details: { customerName: removed.name }
+    });
+
+    res.json({ success: true, message: 'Customer record deleted.' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

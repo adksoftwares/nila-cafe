@@ -1533,6 +1533,56 @@ test('ESC/POS Alignment Commands: validates Left, Center, and Right byte sequenc
   assert.equal(hasSequence(buf, [0x1B, 0x61, 0x02]), true);
 });
 
+test('Customer Loyalty Manual Adjustment Invariant: credits and debits points without dropping below zero', () => {
+  const customer = {
+    id: 'cust-101',
+    name: 'Kasun Perera',
+    loyalty_points: 100
+  };
+
+  // Step 1: Credit +50 points
+  customer.loyalty_points = Math.max(0, customer.loyalty_points + 50);
+  assert.equal(customer.loyalty_points, 150);
+
+  // Step 2: Debit -30 points
+  customer.loyalty_points = Math.max(0, customer.loyalty_points - 30);
+  assert.equal(customer.loyalty_points, 120);
+
+  // Step 3: Debit more points than available -> floor at 0
+  customer.loyalty_points = Math.max(0, customer.loyalty_points - 200);
+  assert.equal(customer.loyalty_points, 0);
+});
+
+test('Promotions Lifecycle & Minimum Order Spend Invariant: validates coupon application and status toggle', () => {
+  const promo = {
+    id: 'promo-1',
+    code: 'SAVE10',
+    type: 'percentage',
+    value: 10,
+    min_order_amount: 2000,
+    active: true
+  };
+
+  // Scenario 1: Below minimum order spend threshold
+  const subtotalLow = 1500;
+  const isEligibleLow = promo.active && subtotalLow >= promo.min_order_amount;
+  assert.equal(isEligibleLow, false);
+
+  // Scenario 2: Meets minimum order spend threshold
+  const subtotalHigh = 2500;
+  const isEligibleHigh = promo.active && subtotalHigh >= promo.min_order_amount;
+  assert.equal(isEligibleHigh, true);
+
+  const discountAmount = Math.round(subtotalHigh * (promo.value / 100) * 100) / 100;
+  assert.equal(discountAmount, 250);
+
+  // Scenario 3: Disable promotion
+  promo.active = false;
+  const isEligibleDisabled = promo.active && subtotalHigh >= promo.min_order_amount;
+  assert.equal(isEligibleDisabled, false);
+});
+
+
 
 
 

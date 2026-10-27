@@ -544,6 +544,9 @@ function MainPOSApp({
           {page === 'Customers' && (
             <CustomersPage
               customers={customers}
+              api={api}
+              onFlash={flash}
+              onReloadCustomers={loadCustomers}
               onOpenAddCustomer={() => setModal('customer')}
             />
           )}
