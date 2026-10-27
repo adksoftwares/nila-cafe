@@ -68,7 +68,7 @@ function concatBuffers(buffers) {
  * @param {Object} [options]
  * @param {number} [options.paperWidth=80] - 80 for 80mm (48 cols), 58 for 58mm (32 cols)
  * @param {boolean} [options.pulseDrawer=false] - Whether to send cash drawer kick pulse
- * @param {string} [options.shopName='Nila Cafe']
+ * @param {string} [options.shopName='ADK Cafe']
  * @param {string} [options.shopAddress='Colombo, Sri Lanka']
  * @param {string} [options.shopPhone='+94 77 123 4567']
  * @returns {Uint8Array} Binary ESC/POS buffer ready to transmit to thermal printer
@@ -77,7 +77,7 @@ export function generateReceiptESCPOS(sale, options = {}) {
   const {
     paperWidth = 80,
     pulseDrawer = false,
-    shopName = 'Nila Cafe',
+    shopName = 'ADK Cafe',
     shopAddress = 'Colombo, Sri Lanka',
     shopPhone = '+94 77 123 4567'
   } = options;
@@ -204,7 +204,7 @@ export function generateReceiptESCPOS(sale, options = {}) {
   add(ESCPOS_COMMANDS.ALIGN_CENTER);
   addText('Thank you for dining with us!');
   addText('Please retain receipt for your records.');
-  addText('Powered by Nila Cafe POS');
+  addText('Powered by ADK Cafe POS');
 
   // Feed and cut paper
   add(ESCPOS_COMMANDS.FEED_3);
@@ -372,7 +372,7 @@ export function generateDrawerKickESCPOS() {
  */
 export function generateDiagnosticTestESCPOS({
   width = '80mm',
-  shopName = 'Nila Cafe',
+  shopName = 'ADK Cafe',
   printerIp = null,
   pulseDrawer = false
 } = {}) {

@@ -38,11 +38,11 @@ async function seed() {
   if (!shop) {
     shop = (
       await pool.query(
-        "INSERT INTO shops(name, email, phone, address, service_charge_enabled, service_charge_rate, sscl_enabled, sscl_rate, vat_enabled, vat_rate) VALUES('Nila Cafe Central', 'owner@counterpoint.local', '+94 77 123 4567', 'Galle Road, Colombo 03, Sri Lanka', TRUE, 10.00, TRUE, 2.50, TRUE, 18.00) RETURNING id"
+        "INSERT INTO shops(name, email, phone, address, service_charge_enabled, service_charge_rate, sscl_enabled, sscl_rate, vat_enabled, vat_rate) VALUES('ADK Cafe Central', 'owner@counterpoint.local', '+94 77 123 4567', 'Galle Road, Colombo 03, Sri Lanka', TRUE, 10.00, TRUE, 2.50, TRUE, 18.00) RETURNING id"
       )
     ).rows[0];
   }
-  console.log('✓ Default Shop seeded (Nila Cafe Central).');
+  console.log('✓ Default Shop seeded (ADK Cafe Central).');
 
   // 5. Staff Accounts for Shop
   const staff = [

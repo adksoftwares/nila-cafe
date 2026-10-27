@@ -160,7 +160,7 @@ export default function Topbar({
             type="button"
             className="topbar-logout-btn"
             onClick={onLogout}
-            title="Log out of Nila Cafe"
+            title="Log out of ADK Cafe"
             style={{
               display: 'inline-flex',
               alignItems: 'center',

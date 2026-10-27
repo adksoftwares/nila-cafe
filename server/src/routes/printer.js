@@ -64,7 +64,7 @@ router.post('/test-print', auth, roles('owner', 'manager', 'cashier'), async (re
 
   const buffer = generateDiagnosticTestESCPOS({
     width: Number(width) === 58 ? '58mm' : '80mm',
-    shopName: 'Nila Cafe',
+    shopName: 'ADK Cafe',
     printerIp: targetIp,
     pulseDrawer: Boolean(pulseDrawer)
   });
@@ -155,7 +155,7 @@ router.post('/print-receipt', auth, async (req, res) => {
   const buffer = generateReceiptESCPOS(sale, {
     paperWidth: Number(paperWidth) || 80,
     pulseDrawer: Boolean(pulseDrawer),
-    shopName: 'Nila Cafe',
+    shopName: 'ADK Cafe',
     shopAddress: 'Colombo, Sri Lanka',
     shopPhone: '+94 77 123 4567'
   });
@@ -197,7 +197,7 @@ router.post('/print-x-report', auth, roles('owner', 'manager', 'cashier'), async
 
   const buffer = generateXReportESCPOS(xReport, {
     width: paperWidth === 58 ? '58mm' : '80mm',
-    shopName: 'Nila Cafe'
+    shopName: 'ADK Cafe'
   });
 
   const printerIp = process.env.PRINTER_IP;
@@ -237,7 +237,7 @@ router.post('/print-z-report', auth, roles('owner', 'manager', 'cashier'), async
 
   const buffer = generateZReportESCPOS(zReport, {
     width: paperWidth === 58 ? '58mm' : '80mm',
-    shopName: 'Nila Cafe'
+    shopName: 'ADK Cafe'
   });
 
   const printerIp = process.env.PRINTER_IP;

@@ -54,7 +54,7 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
           <Command size={20} />
         </div>
         <span>
-          nila<span className="brand-dot">.cafe</span>
+          adk<span className="brand-dot">.cafe</span>
         </span>
       </div>
 
@@ -90,8 +90,8 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
         <div className="help-card">
           <div className="help-icon">✳</div>
           <strong>Need a hand?</strong>
-          <p>We're here to help you get the most out of Nila Cafe.</p>
-          <button onClick={() => onFlash('Support contact: support@nilacafe.local')}>
+          <p>We're here to help you get the most out of ADK Cafe.</p>
+          <button onClick={() => onFlash('Support contact: support@adksoftwares.com')}>
             Get support <span>↗</span>
           </button>
         </div>

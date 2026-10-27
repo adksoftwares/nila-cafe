@@ -79,7 +79,7 @@ export default function AdminShopsPage({
                 : [
                     {
                       id: 'shop-demo',
-                      name: 'The Daily Counter (Nila Cafe)',
+                      name: 'The Daily Counter (ADK Cafe)',
                       email: 'owner@counterpoint.local',
                       phone: '+94 77 123 4567',
                       active: true

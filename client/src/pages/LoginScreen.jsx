@@ -18,7 +18,7 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
             <Command size={22} />
           </div>
           <span>
-            nila<span className="brand-dot">.cafe</span>
+            adk<span className="brand-dot">.cafe</span>
           </span>
         </div>
 
@@ -29,7 +29,7 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
             in Good Hands.
           </h1>
           <p>
-            A calm, fast, and reliable POS platform for Nila Cafe. Orders, inventory, and insights — all in one place.
+            A calm, fast, and reliable POS platform for ADK Cafe. Orders, inventory, and insights — all in one place.
           </p>
           <div className="login-stats">
             <div>
@@ -53,12 +53,12 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
               <Command size={22} />
             </div>
             <span>
-              nila<span className="brand-dot">.cafe</span>
+              adk<span className="brand-dot">.cafe</span>
             </span>
           </div>
 
           <span className="eyebrow">WELCOME BACK</span>
-          <h2>Sign in to Nila Cafe POS</h2>
+          <h2>Sign in to ADK POS</h2>
           <p className="muted">Enter your account credentials to begin your shift.</p>
 
           <label>Email address</label>
@@ -66,7 +66,7 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
-            placeholder="owner@nilacafe.com"
+            placeholder="owner@adkcafe.com"
             required
           />
 

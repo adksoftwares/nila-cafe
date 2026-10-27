@@ -56,7 +56,7 @@ export function generateReceiptESCPOS(sale, options = {}) {
   const {
     paperWidth = 80,
     pulseDrawer = false,
-    shopName = 'Nila Cafe',
+    shopName = 'ADK Cafe',
     shopAddress = 'Colombo, Sri Lanka',
     shopPhone = '+94 77 123 4567'
   } = options;
@@ -177,7 +177,7 @@ export function generateReceiptESCPOS(sale, options = {}) {
   add(ESCPOS_COMMANDS.ALIGN_CENTER);
   addText('Thank you for dining with us!');
   addText('Please retain receipt for your records.');
-  addText('Powered by Nila Cafe POS');
+  addText('Powered by ADK Cafe POS');
 
   add(ESCPOS_COMMANDS.FEED_3);
   add(ESCPOS_COMMANDS.CUT_PAPER);

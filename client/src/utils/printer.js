@@ -10,7 +10,7 @@ export const DEFAULT_PRINTER_CONFIG = {
   printerPort: 9100,
   paperWidth: '80mm', // '80mm' | '58mm'
   autoDrawerKick: true,
-  headerText: 'Nila Cafe',
+  headerText: 'ADK Cafe',
   subHeaderText: 'Specialty Coffee & Artisanal Kitchen',
   footerText: 'Thank you for dining with us! Please come again.'
 };

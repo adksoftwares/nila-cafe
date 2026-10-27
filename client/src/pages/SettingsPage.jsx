@@ -411,7 +411,7 @@ export default function SettingsPage({
               </label>
               <input
                 type="text"
-                placeholder="e.g. Nila Cafe"
+                placeholder="e.g. ADK Cafe"
                 value={config.headerText}
                 onChange={e => handleConfigChange('headerText', e.target.value)}
                 style={{ width: '100%', padding: '6px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}

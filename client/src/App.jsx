@@ -86,7 +86,7 @@ function MainPOSApp({
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null);
 
-  const [shopName] = useState('Nila Cafe');
+  const [shopName] = useState('ADK Cafe');
   const [adminShops, setAdminShops] = useState([]);
 
   const loadSales = () => {
