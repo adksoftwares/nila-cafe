@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Printer, ChefHat, ReceiptText, Download, Zap } from 'lucide-react';
-import { money } from '../../utils/formatters.js';
+import { money, downloadReceiptText } from '../../utils/formatters.js';
 import { generateReceiptESCPOS, downloadRawESCPOSFile, generateDrawerKickESCPOS } from '../../utils/escpos.js';
 
 export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash }) {
@@ -8,6 +8,14 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
   const [paperWidth, setPaperWidth] = useState(80); // 80 or 58 mm
   const [printingThermal, setPrintingThermal] = useState(false);
   const [pulsingDrawer, setPulsingDrawer] = useState(false);
+
+  // Automatically download formatted receipt (.txt) upon sale completion
+  useEffect(() => {
+    if (receipt?.bill_number) {
+      downloadReceiptText(receipt, shopName || 'ADK Cafe');
+      onFlash?.(`Receipt automatically downloaded (receipt-${receipt.bill_number}.txt)`, 'success');
+    }
+  }, [receipt?.bill_number]);
 
   const handlePrintESCPOS = async () => {
     setPrintingThermal(true);
@@ -29,7 +37,7 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
       const buffer = generateReceiptESCPOS(receipt, {
         paperWidth,
         pulseDrawer: receipt.payment_method === 'cash',
-        shopName: shopName || 'Nila Cafe'
+        shopName: shopName || 'ADK Cafe'
       });
       downloadRawESCPOSFile(buffer, `receipt-${receipt.bill_number}-${paperWidth}mm.bin`);
       onFlash?.('ESC/POS binary buffer downloaded for thermal spooler', 'success');
@@ -37,7 +45,7 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
       const buffer = generateReceiptESCPOS(receipt, {
         paperWidth,
         pulseDrawer: receipt.payment_method === 'cash',
-        shopName: shopName || 'Nila Cafe'
+        shopName: shopName || 'ADK Cafe'
       });
       downloadRawESCPOSFile(buffer, `receipt-${receipt.bill_number}-${paperWidth}mm.bin`);
       onFlash?.('ESC/POS binary buffer generated for thermal spooler', 'success');
@@ -228,7 +236,7 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
                 <span>{money(receipt.amount_received - receipt.total)}</span>
               </div>
             )}
-            <p className="receipt-thanks">Thank you for visiting Nila Cafe. Come again!</p>
+            <p className="receipt-thanks">Thank you for visiting ADK Cafe. Come again!</p>
           </div>
         ) : (
           /* KITCHEN ORDER TICKET (KOT) */
@@ -340,6 +348,18 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
         <div className="modal-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <button className="secondary-btn" onClick={onClose}>
             Close
+          </button>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => {
+              downloadReceiptText(receipt, shopName || 'ADK Cafe');
+              onFlash?.(`Receipt downloaded (receipt-${receipt.bill_number}.txt)`, 'success');
+            }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderColor: '#10b981', color: '#059669' }}
+            title="Download formatted text receipt file"
+          >
+            <Download size={15} /> Download (.txt)
           </button>
           <button
             type="button"
