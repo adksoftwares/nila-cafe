@@ -26,8 +26,8 @@ export let demoSales = [
     created_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     cashier_name: 'Cashier One',
     items: [
-      { id: 'si-1', name: 'Chicken Burger', code: 'BUR001', quantity: 2, price: 950, total: 1900, notes: 'Extra sauce' },
-      { id: 'si-2', name: 'French Fries', code: 'FRI001', quantity: 1, price: 500, total: 450, notes: 'Crispy' }
+      { id: 'si-1', name: 'Chicken Burger', code: 'BUR001', category: 'Burgers', quantity: 2, price: 950, total: 1900, notes: 'Extra sauce', status: 'ready' },
+      { id: 'si-2', name: 'French Fries', code: 'FRI001', category: 'Sides', quantity: 1, price: 500, total: 450, notes: 'Crispy', status: 'ready' }
     ],
     payments: [{ method: 'cash', amount: 2250 }]
   },
@@ -46,12 +46,35 @@ export let demoSales = [
     total: 1500,
     payment_method: 'card',
     amount_received: 1500,
-    created_at: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
     cashier_name: 'Demo Owner',
     items: [
-      { id: 'si-3', name: 'Classic Pizza', code: 'PIZ001', quantity: 1, price: 1500, total: 1500, notes: 'Less spicy' }
+      { id: 'si-3', name: 'Classic Pizza', code: 'PIZ001', category: 'Pizza', quantity: 1, price: 1500, total: 1500, notes: 'Less spicy', status: 'pending' }
     ],
     payments: [{ method: 'card', amount: 1500, reference: 'VISA-9921' }]
+  },
+  {
+    id: 'sale-demo-3',
+    bill_number: 'POS-NILA-1003',
+    order_type: 'takeaway',
+    table_number: null,
+    kitchen_status: 'pending',
+    status: 'completed',
+    subtotal: 900,
+    discount: 0,
+    service_charge: 0,
+    sscl: 0,
+    vat: 0,
+    total: 900,
+    payment_method: 'cash',
+    amount_received: 1000,
+    created_at: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
+    cashier_name: 'Cashier One',
+    items: [
+      { id: 'si-4', name: 'Iced Coffee', code: 'COF001', category: 'Drinks', quantity: 1, price: 500, total: 500, notes: 'Almond milk', status: 'pending' },
+      { id: 'si-5', name: 'Fresh Juice', code: 'JUI001', category: 'Drinks', quantity: 1, price: 400, total: 400, notes: 'Less sugar', status: 'pending' }
+    ],
+    payments: [{ method: 'cash', amount: 900 }]
   }
 ];
 

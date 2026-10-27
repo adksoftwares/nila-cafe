@@ -163,13 +163,16 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), valid
         }
 
         lines.push({
+          id: 'si-' + crypto.randomUUID().slice(0, 8),
           name: p.name,
           code: p.code,
+          category: p.category || '',
           quantity: q,
           price,
           discount: 0,
           notes: item.notes || '',
           modifiers: itemModifiers,
+          status: 'pending',
           total: lineSub
         });
       }
@@ -229,10 +232,14 @@ router.post('/hold', auth, roles('owner', 'manager', 'cashier', 'waiter'), valid
         kitchen_status: 'pending',
         created_at: openSale.created_at,
         items: lines.map(l => ({
+          id: l.id,
           name: l.name,
           code: l.code,
+          category: l.category,
           qty: l.quantity,
-          notes: l.notes
+          notes: l.notes,
+          modifiers: l.modifiers || [],
+          status: l.status || 'pending'
         }))
       });
 

@@ -13,6 +13,12 @@ import { checkoutSchema, voidSaleSchema } from './schemas/sales.js';
 import { openShiftSchema, shiftAdjustmentSchema } from './schemas/shifts.js';
 import { createModifierSchema } from './schemas/modifiers.js';
 import { logger } from './utils/logger.js';
+import {
+  getItemStation,
+  getTicketStation,
+  getSLAClassification,
+  bumpOrderItem
+} from './utils/kds.js';
 
 test('POS order pricing rule: takeaway uses takeaway price; delivery and dining use normal price', () => {
   const p = { takeaway_price: 850, normal_price: 950 };
@@ -1171,6 +1177,106 @@ test('ESC/POS X-Report & Z-Report Buffer Compilation: compiles full binary paylo
   assert.equal(hasCut(xBuf), true);
   assert.equal(hasCut(zBuf), true);
 });
+
+test('KDS Station Routing: line items route accurately to Barista or Hot Kitchen based on category and keyword', () => {
+  // Barista Station items
+  assert.equal(getItemStation({ category: 'Drinks', name: 'Fresh Juice' }), 'barista');
+  assert.equal(getItemStation({ category: 'Coffee', name: 'Hot Latte' }), 'barista');
+  assert.equal(getItemStation({ category: 'Beverages', name: 'Iced Americano' }), 'barista');
+  assert.equal(getItemStation({ category: 'General', name: 'Chai Milk Tea' }), 'barista');
+  assert.equal(getItemStation({ name: 'Caramel Frappe' }), 'barista');
+
+  // Hot Kitchen Station items
+  assert.equal(getItemStation({ category: 'Burgers', name: 'Crispy Chicken Burger' }), 'kitchen');
+  assert.equal(getItemStation({ category: 'Pizza', name: 'Margherita Pizza' }), 'kitchen');
+  assert.equal(getItemStation({ category: 'Sides', name: 'French Fries' }), 'kitchen');
+  assert.equal(getItemStation({ category: 'Sandwiches', name: 'Club Sandwich' }), 'kitchen');
+
+  // Explicit override
+  assert.equal(getItemStation({ station: 'barista', name: 'Custom Item' }), 'barista');
+  assert.equal(getItemStation({ station: 'kitchen', name: 'Custom Drink' }), 'kitchen');
+});
+
+test('KDS Ticket Classification: ticket station is classified as barista, kitchen, or mixed', () => {
+  const drinkOrder = [
+    { name: 'Iced Coffee', category: 'Drinks' },
+    { name: 'Fresh Juice', category: 'Drinks' }
+  ];
+  assert.equal(getTicketStation(drinkOrder), 'barista');
+
+  const kitchenOrder = [
+    { name: 'Chicken Burger', category: 'Burgers' },
+    { name: 'French Fries', category: 'Sides' }
+  ];
+  assert.equal(getTicketStation(kitchenOrder), 'kitchen');
+
+  const mixedOrder = [
+    { name: 'Chicken Burger', category: 'Burgers' },
+    { name: 'Iced Coffee', category: 'Drinks' }
+  ];
+  assert.equal(getTicketStation(mixedOrder), 'mixed');
+
+  assert.equal(getTicketStation([]), 'kitchen');
+});
+
+test('KDS Live SLA Timers: classifies elapsed order duration into Fresh, Warning, and Delayed states', () => {
+  const baseTime = 1700000000000;
+
+  // 1. Fresh (< 5 min)
+  const freshCreated = new Date(baseTime - 2 * 60 * 1000).toISOString();
+  const freshSLA = getSLAClassification(freshCreated, baseTime);
+  assert.equal(freshSLA.slaStatus, 'fresh');
+  assert.equal(freshSLA.isPulsing, false);
+  assert.equal(freshSLA.elapsedMinutes, 2);
+  assert.equal(freshSLA.formattedTime, '02:00');
+
+  // 2. Warning (5 - 10 min)
+  const warningCreated = new Date(baseTime - 7 * 60 * 1000 - 30 * 1000).toISOString();
+  const warningSLA = getSLAClassification(warningCreated, baseTime);
+  assert.equal(warningSLA.slaStatus, 'warning');
+  assert.equal(warningSLA.isPulsing, false);
+  assert.equal(warningSLA.elapsedMinutes, 7);
+  assert.equal(warningSLA.formattedTime, '07:30');
+
+  // 3. Delayed (> 10 min)
+  const delayedCreated = new Date(baseTime - 14 * 60 * 1000 - 15 * 1000).toISOString();
+  const delayedSLA = getSLAClassification(delayedCreated, baseTime);
+  assert.equal(delayedSLA.slaStatus, 'delayed');
+  assert.equal(delayedSLA.isPulsing, true);
+  assert.equal(delayedSLA.elapsedMinutes, 14);
+  assert.equal(delayedSLA.formattedTime, '14:15');
+});
+
+test('KDS Line-Item Bumping: toggles item completion and automatically advances ticket to ready when all items are done', () => {
+  const order = {
+    id: 'ord-100',
+    bill_number: 'POS-NILA-TEST',
+    kitchen_status: 'pending',
+    items: [
+      { id: 'item-1', name: 'Chicken Burger', status: 'pending' },
+      { id: 'item-2', name: 'French Fries', status: 'pending' }
+    ]
+  };
+
+  // Step 1: Bump first item
+  const res1 = bumpOrderItem(order, 'item-1');
+  assert.equal(res1.item.status, 'ready');
+  assert.equal(res1.isAllReady, false);
+  assert.equal(order.kitchen_status, 'preparing');
+
+  // Step 2: Bump second item -> all items are ready -> order transitions to ready!
+  const res2 = bumpOrderItem(order, 'item-2');
+  assert.equal(res2.item.status, 'ready');
+  assert.equal(res2.isAllReady, true);
+  assert.equal(order.kitchen_status, 'ready');
+
+  // Step 3: Un-bump first item back to pending -> order reverts to preparing
+  const res3 = bumpOrderItem(order, 'item-1');
+  assert.equal(res3.item.status, 'pending');
+  assert.equal(res3.isAllReady, false);
+  assert.equal(order.kitchen_status, 'preparing');
+});
+
 
 
 
