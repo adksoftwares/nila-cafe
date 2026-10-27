@@ -214,6 +214,152 @@ export function generateReceiptESCPOS(sale, options = {}) {
 }
 
 /**
+ * Compiles a binary ESC/POS buffer for an Interim Mid-Shift X-Report (without resetting the register)
+ */
+export function generateXReportESCPOS(report, options = {}) {
+  const width = options.width || '80mm';
+  const cols = width === '58mm' ? 32 : 42;
+  const divider = '-'.repeat(cols);
+  const doubleDivider = '='.repeat(cols);
+  const encoder = new TextEncoder();
+  const chunks = [];
+
+  const add = (buf) => chunks.push(buf);
+  const addText = (str) => chunks.push(encoder.encode(str + '\n'));
+  const fmtMoney = (n) => Number(n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  add(ESCPOS_COMMANDS.INIT);
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText(options.shopName || 'THE DAILY COUNTER');
+  add(ESCPOS_COMMANDS.DOUBLE_SIZE_ON);
+  addText('MID-SHIFT X-REPORT (INTERIM)');
+  add(ESCPOS_COMMANDS.NORMAL_SIZE);
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText('*** NOT A TAX INVOICE - REGISTER ACTIVE ***');
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.ALIGN_LEFT);
+  addText(formatTwoColumns('REPORT TYPE:', 'X-READING (INTERIM)', cols));
+  addText(formatTwoColumns('DATE / TIME:', new Date().toLocaleString('en-LK'), cols));
+  addText(formatTwoColumns('SHIFT OPENED:', new Date(report.openedAt).toLocaleString('en-LK'), cols));
+  addText(formatTwoColumns('CASHIER:', report.cashier || 'Cashier', cols));
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('SALES REVENUE SUMMARY');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Total Bills:', String(report.billsCount || 0), cols));
+  addText(formatTwoColumns('Cash Sales:', `LKR ${fmtMoney(report.cashSales)}`, cols));
+  if (report.cardSales) addText(formatTwoColumns('Card Sales:', `LKR ${fmtMoney(report.cardSales)}`, cols));
+  if (report.qrSales) addText(formatTwoColumns('QR Sales:', `LKR ${fmtMoney(report.qrSales)}`, cols));
+  addText(formatTwoColumns('Discounts Given:', `-${fmtMoney(report.discountsGiven)}`, cols));
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('TAXES & LEVIES COLLECTED');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Service Charge (10%):', `+${fmtMoney(report.serviceChargeCollected)}`, cols));
+  addText(formatTwoColumns('SSCL Levy (2.5%):', `+${fmtMoney(report.ssclCollected)}`, cols));
+  addText(formatTwoColumns('VAT (18%):', `+${fmtMoney(report.vatCollected)}`, cols));
+  addText(formatTwoColumns('Total Taxes:', `LKR ${fmtMoney(report.totalTaxesCollected)}`, cols));
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('TILL DRAWER POSITION');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Opening Float:', `LKR ${fmtMoney(report.openingFloat)}`, cols));
+  addText(formatTwoColumns('Net Adjustments (±):', `LKR ${fmtMoney(report.netAdjustments)}`, cols));
+  addText(doubleDivider);
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText(formatTwoColumns('EXPECTED CASH IN TILL:', `LKR ${fmtMoney(report.expectedCash)}`, cols));
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(doubleDivider);
+
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  addText('*** END OF INTERIM X-REPORT ***');
+  add(ESCPOS_COMMANDS.FEED_3);
+  add(ESCPOS_COMMANDS.CUT_PAPER);
+
+  return concatBuffers(chunks);
+}
+
+/**
+ * Compiles a binary ESC/POS buffer for an Official Resetting Z-Report (permanently sealing the shift)
+ */
+export function generateZReportESCPOS(report, options = {}) {
+  const width = options.width || '80mm';
+  const cols = width === '58mm' ? 32 : 42;
+  const divider = '-'.repeat(cols);
+  const doubleDivider = '='.repeat(cols);
+  const encoder = new TextEncoder();
+  const chunks = [];
+
+  const add = (buf) => chunks.push(buf);
+  const addText = (str) => chunks.push(encoder.encode(str + '\n'));
+  const fmtMoney = (n) => Number(n || 0).toLocaleString('en-LK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  add(ESCPOS_COMMANDS.INIT);
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText(options.shopName || 'THE DAILY COUNTER');
+  add(ESCPOS_COMMANDS.DOUBLE_SIZE_ON);
+  addText(`OFFICIAL Z-REPORT #${report.zReportNumber}`);
+  add(ESCPOS_COMMANDS.NORMAL_SIZE);
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText('*** REGISTER RESET & SHIFT SEALED ***');
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.ALIGN_LEFT);
+  addText(formatTwoColumns('Z-COUNTER NO:', String(report.zReportNumber), cols));
+  addText(formatTwoColumns('CLOSED DATE/TIME:', new Date(report.closedAt).toLocaleString('en-LK'), cols));
+  addText(formatTwoColumns('OPENED DATE/TIME:', new Date(report.openedAt).toLocaleString('en-LK'), cols));
+  addText(formatTwoColumns('CASHIER:', report.cashier || 'Cashier', cols));
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('FINAL REVENUE & TAX AUDIT');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Bills Settled:', String(report.billsCount || 0), cols));
+  addText(formatTwoColumns('Cash Sales:', `LKR ${fmtMoney(report.cashSales)}`, cols));
+  addText(formatTwoColumns('Discounts Given:', `-${fmtMoney(report.discountsGiven)}`, cols));
+  addText(formatTwoColumns('Service Charge (10%):', `+${fmtMoney(report.serviceChargeCollected)}`, cols));
+  addText(formatTwoColumns('SSCL Levy (2.5%):', `+${fmtMoney(report.ssclCollected)}`, cols));
+  addText(formatTwoColumns('VAT (18%):', `+${fmtMoney(report.vatCollected)}`, cols));
+  addText(formatTwoColumns('Total Tax Collected:', `LKR ${fmtMoney(report.totalTaxesCollected)}`, cols));
+  addText(divider);
+
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('BLIND CASH RECONCILIATION');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Opening Float:', `LKR ${fmtMoney(report.openingFloat)}`, cols));
+  addText(formatTwoColumns('Net Adjustments (±):', `LKR ${fmtMoney(report.netAdjustments)}`, cols));
+  addText(formatTwoColumns('Expected Cash:', `LKR ${fmtMoney(report.expectedCash)}`, cols));
+  addText(formatTwoColumns('Actual Counted Cash:', `LKR ${fmtMoney(report.actualCountedCash)}`, cols));
+  addText(doubleDivider);
+
+  const variance = report.variance || 0;
+  const varStatus = variance === 0 ? 'BALANCED' : variance > 0 ? `OVER (+${fmtMoney(variance)})` : `SHORT (${fmtMoney(variance)})`;
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText(formatTwoColumns('TILL VARIANCE:', varStatus, cols));
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+
+  if (report.varianceReason) {
+    addText(`Variance Reason: ${report.varianceReason}`);
+  }
+  addText(doubleDivider);
+
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  addText('*** OFFICIAL TAX AUDIT RECORD ***');
+  addText('Register totals have been reset.');
+  add(ESCPOS_COMMANDS.FEED_3);
+  add(ESCPOS_COMMANDS.CUT_PAPER);
+
+  return concatBuffers(chunks);
+}
+
+
+/**
  * Returns standalone ESC/POS command to kick the cash drawer.
  */
 export function generateDrawerKickESCPOS() {

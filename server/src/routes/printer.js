@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import net from 'node:net';
 import { auth, roles } from '../middleware/auth.js';
-import { generateDrawerKickESCPOS, generateReceiptESCPOS } from '../utils/escpos.js';
+import {
+  generateDrawerKickESCPOS,
+  generateReceiptESCPOS,
+  generateXReportESCPOS,
+  generateZReportESCPOS
+} from '../utils/escpos.js';
 
 const router = Router();
 
@@ -118,6 +123,86 @@ router.post('/print-receipt', auth, async (req, res) => {
   } catch (err) {
     res.status(502).json({
       error: `Network thermal printer error: ${err.message}`,
+      escposBase64: Buffer.from(buffer).toString('base64')
+    });
+  }
+});
+
+// Printer: Print Interim Mid-Shift X-Report
+router.post('/print-x-report', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+  const { xReport, paperWidth = 80 } = req.body;
+  if (!xReport) {
+    return res.status(400).json({ error: 'Valid xReport object is required.' });
+  }
+
+  const buffer = generateXReportESCPOS(xReport, {
+    width: paperWidth === 58 ? '58mm' : '80mm',
+    shopName: 'Nila Cafe'
+  });
+
+  const printerIp = process.env.PRINTER_IP;
+  const printerPort = Number(process.env.PRINTER_PORT || 9100);
+
+  try {
+    if (printerIp) {
+      await sendToNetworkPrinter(printerIp, printerPort, buffer);
+      return res.json({
+        success: true,
+        message: 'Interim X-Report sent to thermal network printer.',
+        bytesPrinted: buffer.length
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'X-Report ESC/POS buffer compiled successfully.',
+      bytesLength: buffer.length,
+      escposHex: Buffer.from(buffer).toString('hex'),
+      escposBase64: Buffer.from(buffer).toString('base64')
+    });
+  } catch (err) {
+    res.status(502).json({
+      error: `Printer transmission error: ${err.message}`,
+      escposBase64: Buffer.from(buffer).toString('base64')
+    });
+  }
+});
+
+// Printer: Print Official Resetting Z-Report
+router.post('/print-z-report', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+  const { zReport, paperWidth = 80 } = req.body;
+  if (!zReport) {
+    return res.status(400).json({ error: 'Valid zReport object is required.' });
+  }
+
+  const buffer = generateZReportESCPOS(zReport, {
+    width: paperWidth === 58 ? '58mm' : '80mm',
+    shopName: 'Nila Cafe'
+  });
+
+  const printerIp = process.env.PRINTER_IP;
+  const printerPort = Number(process.env.PRINTER_PORT || 9100);
+
+  try {
+    if (printerIp) {
+      await sendToNetworkPrinter(printerIp, printerPort, buffer);
+      return res.json({
+        success: true,
+        message: 'Official Z-Report sent to thermal network printer.',
+        bytesPrinted: buffer.length
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Z-Report ESC/POS buffer compiled successfully.',
+      bytesLength: buffer.length,
+      escposHex: Buffer.from(buffer).toString('hex'),
+      escposBase64: Buffer.from(buffer).toString('base64')
+    });
+  } catch (err) {
+    res.status(502).json({
+      error: `Printer transmission error: ${err.message}`,
       escposBase64: Buffer.from(buffer).toString('base64')
     });
   }

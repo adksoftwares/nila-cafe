@@ -4,7 +4,8 @@ import {
   demoShift,
   setDemoShift,
   demoShiftAdjustments,
-  demoSales
+  demoSales,
+  getNextDemoZCounter
 } from '../state.js';
 import { auth, roles } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
@@ -171,9 +172,119 @@ router.post('/adjustment', auth, roles('owner', 'manager'), validateBody(shiftAd
   }
 });
 
-// Shifts: Close Shift & Generate Official Z-Report
+// Shifts: Interim Mid-Shift X-Report (Non-resetting reading)
+router.get('/x-report', auth, async (req, res) => {
+  try {
+    if (pool) {
+      const rows = await query(
+        "SELECT * FROM shifts WHERE shop_id = $1 AND status = 'open' ORDER BY opened_at DESC LIMIT 1",
+        [req.user.shop_id],
+        req.user
+      );
+      if (!rows.length) return res.status(400).json({ error: 'No open shift found.' });
+      const shift = rows[0];
+
+      const salesAgg = await query(
+        `SELECT 
+          COUNT(*)::int AS bills, 
+          COALESCE(SUM(total), 0)::float AS gross_sales,
+          COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END), 0)::float AS cash_sales,
+          COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END), 0)::float AS card_sales,
+          COALESCE(SUM(CASE WHEN payment_method = 'qr' THEN total ELSE 0 END), 0)::float AS qr_sales,
+          COALESCE(SUM(discount), 0)::float AS discounts, 
+          COALESCE(SUM(service_charge), 0)::float AS service_charge, 
+          COALESCE(SUM(sscl), 0)::float AS sscl, 
+          COALESCE(SUM(vat), 0)::float AS vat 
+         FROM sales WHERE shift_id = $1 AND status != 'voided'`,
+        [shift.id],
+        req.user
+      );
+
+      const adjAgg = await query(
+        "SELECT COALESCE(SUM(CASE WHEN type = 'cash_in' THEN amount ELSE -amount END), 0)::float AS net_adjustments FROM shift_cash_adjustments WHERE shift_id = $1",
+        [shift.id],
+        req.user
+      );
+
+      const s = salesAgg[0] || {};
+      const cashSales = s.cash_sales || 0;
+      const netAdjustments = adjAgg[0]?.net_adjustments || 0;
+      const expectedCash = Math.round((Number(shift.opening_float) + cashSales + netAdjustments) * 100) / 100;
+      const scCollected = s.service_charge || 0;
+      const ssclCollected = s.sscl || 0;
+      const vatCollected = s.vat || 0;
+
+      const xReport = {
+        reportType: 'X-REPORT',
+        shiftId: shift.id,
+        openedAt: shift.opened_at,
+        currentTimestamp: new Date().toISOString(),
+        cashier: req.user.name,
+        openingFloat: Number(shift.opening_float),
+        billsCount: s.bills || 0,
+        grossSales: s.gross_sales || 0,
+        cashSales,
+        cardSales: s.card_sales || 0,
+        qrSales: s.qr_sales || 0,
+        discountsGiven: s.discounts || 0,
+        serviceChargeCollected: scCollected,
+        ssclCollected: ssclCollected,
+        vatCollected: vatCollected,
+        totalTaxesCollected: Math.round((scCollected + ssclCollected + vatCollected) * 100) / 100,
+        netAdjustments,
+        expectedCash
+      };
+
+      return res.json({ success: true, xReport });
+    }
+
+    // Demo Mode X-Report
+    if (!demoShift || demoShift.status !== 'open') {
+      return res.status(400).json({ error: 'No open shift found.' });
+    }
+
+    const validShiftSales = demoSales.filter(s => s.status !== 'voided');
+    const cashSales = validShiftSales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + s.total, 0);
+    const cardSales = validShiftSales.filter(s => s.payment_method === 'card').reduce((sum, s) => sum + s.total, 0);
+    const qrSales = validShiftSales.filter(s => s.payment_method === 'qr').reduce((sum, s) => sum + s.total, 0);
+    const grossSales = validShiftSales.reduce((sum, s) => sum + s.total, 0);
+    const discounts = validShiftSales.reduce((sum, s) => sum + s.discount, 0);
+    const scCollected = Math.round(validShiftSales.reduce((sum, s) => sum + (s.service_charge || 0), 0) * 100) / 100;
+    const ssclCollected = Math.round(validShiftSales.reduce((sum, s) => sum + (s.sscl || 0), 0) * 100) / 100;
+    const vatCollected = Math.round(validShiftSales.reduce((sum, s) => sum + (s.vat || 0), 0) * 100) / 100;
+    const netAdjustments = demoShiftAdjustments.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
+    const expectedCash = Math.round((demoShift.opening_float + cashSales + netAdjustments) * 100) / 100;
+
+    const xReport = {
+      reportType: 'X-REPORT',
+      shiftId: demoShift.id,
+      openedAt: demoShift.opened_at,
+      currentTimestamp: new Date().toISOString(),
+      cashier: req.user.name || 'Demo Cashier',
+      openingFloat: demoShift.opening_float,
+      billsCount: validShiftSales.length,
+      grossSales,
+      cashSales,
+      cardSales,
+      qrSales,
+      discountsGiven: discounts,
+      serviceChargeCollected: scCollected,
+      ssclCollected: ssclCollected,
+      vatCollected: vatCollected,
+      totalTaxesCollected: Math.round((scCollected + ssclCollected + vatCollected) * 100) / 100,
+      netAdjustments,
+      expectedCash
+    };
+
+    res.json({ success: true, xReport });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Shifts: Close Shift & Generate Official Z-Report (Blind Reconciliation & Sequential Z-Counter)
 router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(closeShiftSchema), async (req, res) => {
-  const { actualCash = 0, notes = '' } = req.body;
+  const { actualCash = 0, notes = '', denominations = {}, varianceReason = '' } = req.body;
   const counted = Math.max(0, Number(actualCash) || 0);
 
   try {
@@ -187,6 +298,15 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
         return res.status(400).json({ error: 'No open shift to close.' });
       }
       const shift = active[0];
+
+      // Sequential Z-Counter
+      const zRow = await query(
+        "SELECT COALESCE(MAX(z_counter), 0) + 1 AS next_z FROM shifts WHERE shop_id = $1",
+        [req.user.shop_id],
+        req.user
+      );
+      const zCounter = zRow[0]?.next_z || 1;
+      const zReportNumber = `Z-${String(zCounter).padStart(4, '0')}`;
 
       const salesAgg = await query(
         "SELECT COUNT(*)::int AS bills, COALESCE(SUM(total), 0)::float AS cash_sales, COALESCE(SUM(discount), 0)::float AS discounts, COALESCE(SUM(service_charge), 0)::float AS service_charge, COALESCE(SUM(sscl), 0)::float AS sscl, COALESCE(SUM(vat), 0)::float AS vat FROM sales WHERE shift_id = $1 AND status != 'voided'",
@@ -208,8 +328,19 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
       const difference = Math.round((counted - expectedCash) * 100) / 100;
 
       const updated = (await query(
-        "UPDATE shifts SET closed_at = NOW(), actual_cash = $1, expected_cash = $2, difference = $3, status = 'closed', notes = $4 WHERE id = $5 RETURNING *",
-        [counted, expectedCash, difference, String(notes || '').trim(), shift.id],
+        `UPDATE shifts 
+         SET closed_at = NOW(), 
+             actual_cash = $1, 
+             expected_cash = $2, 
+             difference = $3, 
+             status = 'closed', 
+             notes = $4,
+             z_counter = $5,
+             denominations = $6,
+             variance_reason = $7
+         WHERE id = $8 
+         RETURNING *`,
+        [counted, expectedCash, difference, String(notes || '').trim(), zCounter, JSON.stringify(denominations || {}), varianceReason || null, shift.id],
         req.user
       ))[0];
 
@@ -218,7 +349,7 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
       const vatCollected = salesAgg[0]?.vat || 0;
 
       const zReport = {
-        zReportNumber: 'Z-' + Date.now().toString().slice(-6),
+        zReportNumber,
         shiftId: shift.id,
         openedAt: shift.opened_at,
         closedAt: updated.closed_at,
@@ -234,6 +365,8 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
         expectedCash,
         actualCountedCash: counted,
         variance: difference,
+        varianceReason: varianceReason || null,
+        denominations,
         billsCount: bills
       };
 
@@ -244,6 +377,9 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
     if (!demoShift || demoShift.status !== 'open') {
       return res.status(400).json({ error: 'No open shift to close.' });
     }
+
+    const zCounter = getNextDemoZCounter();
+    const zReportNumber = `Z-${String(zCounter).padStart(4, '0')}`;
 
     const validCloseSales = demoSales.filter(s => s.status !== 'voided');
     const cashSales = validCloseSales.reduce((sum, s) => sum + s.total, 0);
@@ -262,12 +398,15 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
       expected_cash: expectedCash,
       difference,
       status: 'closed',
-      notes: String(notes || '').trim()
+      notes: String(notes || '').trim(),
+      z_counter: zCounter,
+      denominations,
+      variance_reason: varianceReason || null
     };
     setDemoShift(closedDemoShift);
 
     const zReport = {
-      zReportNumber: 'Z-' + Date.now().toString().slice(-6),
+      zReportNumber,
       shiftId: closedDemoShift.id,
       openedAt: closedDemoShift.opened_at,
       closedAt: closedDemoShift.closed_at,
@@ -283,6 +422,8 @@ router.post('/close', auth, roles('owner', 'manager', 'cashier'), validateBody(c
       expectedCash,
       actualCountedCash: counted,
       variance: difference,
+      varianceReason: varianceReason || null,
+      denominations,
       billsCount: validCloseSales.length
     };
 

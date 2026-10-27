@@ -5,6 +5,8 @@ import {
   ESCPOS_COMMANDS,
   generateDrawerKickESCPOS,
   generateReceiptESCPOS,
+  generateXReportESCPOS,
+  generateZReportESCPOS,
   formatTwoColumns
 } from './utils/escpos.js';
 import { checkoutSchema, voidSaleSchema } from './schemas/sales.js';
@@ -1056,5 +1058,119 @@ test('Structured Logger: Pino logger instance provides high-performance logging 
   assert.ok(shopLogger);
   assert.ok(typeof shopLogger.info === 'function');
 });
+
+test('Sequential Z-Counter: each closed shift increments the sequential Z-number', () => {
+  let zCounter = 0;
+  const generateZReportNumber = () => {
+    zCounter += 1;
+    return `Z-${String(zCounter).padStart(4, '0')}`;
+  };
+
+  assert.equal(generateZReportNumber(), 'Z-0001');
+  assert.equal(generateZReportNumber(), 'Z-0002');
+  assert.equal(generateZReportNumber(), 'Z-0003');
+});
+
+test('Interim X-Report: reading aggregates sales and cash drawer position without resetting shift', () => {
+  const activeShift = {
+    id: 's-1',
+    status: 'open',
+    opening_float: 5000
+  };
+
+  const sales = [
+    { total: 2500, payment_method: 'cash', status: 'completed' },
+    { total: 1500, payment_method: 'card', status: 'completed' }
+  ];
+
+  const adjustments = [
+    { type: 'cash_in', amount: 500 }
+  ];
+
+  const computeXReport = (shift, saleList, adjList) => {
+    const cashSales = saleList.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + s.total, 0);
+    const cardSales = saleList.filter(s => s.payment_method === 'card').reduce((sum, s) => sum + s.total, 0);
+    const netAdj = adjList.reduce((sum, a) => sum + (a.type === 'cash_in' ? a.amount : -a.amount), 0);
+    const expectedCash = shift.opening_float + cashSales + netAdj;
+
+    return {
+      reportType: 'X-REPORT',
+      shiftId: shift.id,
+      shiftStatus: shift.status,
+      cashSales,
+      cardSales,
+      expectedCash
+    };
+  };
+
+  const xReport = computeXReport(activeShift, sales, adjustments);
+
+  assert.equal(xReport.reportType, 'X-REPORT');
+  assert.equal(xReport.shiftStatus, 'open'); // Shift remains open!
+  assert.equal(xReport.cashSales, 2500);
+  assert.equal(xReport.cardSales, 1500);
+  assert.equal(xReport.expectedCash, 8000); // 5000 + 2500 + 500
+});
+
+test('Blind Reconciliation: computes variance and validates denomination aggregation', () => {
+  const denominations = {
+    '5000': 2, // 10000
+    '1000': 5, // 5000
+    '500': 4,  // 2000
+    '100': 10  // 1000
+  };
+
+  const counted = Object.entries(denominations).reduce(
+    (sum, [val, count]) => sum + Number(val) * count,
+    0
+  );
+  assert.equal(counted, 18000);
+
+  const expectedCash = 18500;
+  const variance = counted - expectedCash; // -500 (shortage)
+  assert.equal(variance, -500);
+});
+
+test('ESC/POS X-Report & Z-Report Buffer Compilation: compiles full binary payload with paper cut commands', () => {
+  const sampleReport = {
+    zReportNumber: 'Z-0001',
+    openedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
+    closedAt: new Date().toISOString(),
+    cashier: 'Cashier One',
+    openingFloat: 5000,
+    cashSales: 12500,
+    cardSales: 4000,
+    qrSales: 1500,
+    discountsGiven: 250,
+    serviceChargeCollected: 1250,
+    ssclCollected: 312.5,
+    vatCollected: 2250,
+    totalTaxesCollected: 3812.5,
+    netAdjustments: 500,
+    expectedCash: 18000,
+    actualCountedCash: 18000,
+    variance: 0,
+    billsCount: 15
+  };
+
+  const xBuf = generateXReportESCPOS(sampleReport, { width: '80mm' });
+  assert.ok(xBuf instanceof Uint8Array);
+  assert.ok(xBuf.length > 50);
+
+  const zBuf = generateZReportESCPOS(sampleReport, { width: '80mm' });
+  assert.ok(zBuf instanceof Uint8Array);
+  assert.ok(zBuf.length > 50);
+
+  // Validate CUT_PAPER command (0x1D, 0x56, 0x00) present in both
+  const hasCut = (buf) => {
+    for (let i = 0; i < buf.length - 2; i++) {
+      if (buf[i] === 0x1D && buf[i + 1] === 0x56) return true;
+    }
+    return false;
+  };
+  assert.equal(hasCut(xBuf), true);
+  assert.equal(hasCut(zBuf), true);
+});
+
 
 

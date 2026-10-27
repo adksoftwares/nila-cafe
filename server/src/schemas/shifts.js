@@ -15,5 +15,7 @@ export const shiftAdjustmentSchema = z.object({
 
 export const closeShiftSchema = z.object({
   actualCash: z.number().nonnegative('Counted cash drawer amount cannot be negative'),
-  notes: z.string().optional().default('')
+  notes: z.string().optional().default(''),
+  denominations: z.record(z.string(), z.number().int().nonnegative()).optional().default({}),
+  varianceReason: z.string().optional().default('')
 });

@@ -525,3 +525,10 @@ CREATE POLICY product_modifiers_tenant_isolation ON product_modifiers
 CREATE INDEX IF NOT EXISTS idx_product_modifiers_shop ON product_modifiers(shop_id);
 CREATE INDEX IF NOT EXISTS idx_product_modifiers_prod ON product_modifiers(product_id);
 
+-- Shift Blind Reconciliation & Sequential Z-Counter Migrations
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS z_counter INTEGER;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS denominations JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_reason TEXT;
+CREATE INDEX IF NOT EXISTS idx_shifts_shop_z ON shifts(shop_id, z_counter);
+
+

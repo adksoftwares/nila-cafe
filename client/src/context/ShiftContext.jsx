@@ -58,18 +58,58 @@ export function ShiftProvider({ children, api, user, onFlash }) {
     }
   };
 
-  const closeShift = async ({ actualCash, notes }) => {
+  const closeShift = async ({ actualCash, notes, denominations, varianceReason }) => {
     if (!api) return;
     try {
       const res = await api('/shifts/close', {
         method: 'POST',
-        body: JSON.stringify({ actualCash, notes })
+        body: JSON.stringify({ actualCash, notes, denominations, varianceReason })
       });
       setShift(res.shift);
-      onFlash?.('Shift closed. Official Z-Report generated.', 'success');
+      onFlash?.(`Shift closed. Official Z-Report #${res.zReport?.zReportNumber || ''} generated.`, 'success');
       return res;
     } catch (e) {
       onFlash?.(e.message, 'error');
+      throw e;
+    }
+  };
+
+  const getXReport = async () => {
+    if (!api) return;
+    try {
+      return await api('/shifts/x-report');
+    } catch (e) {
+      onFlash?.(e.message, 'error');
+      throw e;
+    }
+  };
+
+  const printXReport = async (xReport) => {
+    if (!api) return;
+    try {
+      const res = await api('/printer/print-x-report', {
+        method: 'POST',
+        body: JSON.stringify({ xReport })
+      });
+      onFlash?.('Interim X-Report printed to thermal receipt printer.', 'success');
+      return res;
+    } catch (e) {
+      onFlash?.(`Print failed: ${e.message}`, 'error');
+      throw e;
+    }
+  };
+
+  const printZReport = async (zReport) => {
+    if (!api) return;
+    try {
+      const res = await api('/printer/print-z-report', {
+        method: 'POST',
+        body: JSON.stringify({ zReport })
+      });
+      onFlash?.('Official Z-Report printed to thermal receipt printer.', 'success');
+      return res;
+    } catch (e) {
+      onFlash?.(`Print failed: ${e.message}`, 'error');
       throw e;
     }
   };
@@ -81,7 +121,10 @@ export function ShiftProvider({ children, api, user, onFlash }) {
     loadShift,
     openShift,
     closeShift,
-    addAdjustment
+    addAdjustment,
+    getXReport,
+    printXReport,
+    printZReport
   };
 
   return <ShiftContext.Provider value={value}>{children}</ShiftContext.Provider>;

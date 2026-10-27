@@ -165,11 +165,20 @@ export let demoShift = {
   actual_cash: null,
   difference: null,
   status: 'open',
-  notes: 'Morning shift opening float'
+  notes: 'Morning shift opening float',
+  denominations: {},
+  variance_reason: null,
+  z_counter: null
 };
 
 export function setDemoShift(s) {
   demoShift = s;
+}
+
+export let demoZCounter = 1;
+
+export function getNextDemoZCounter() {
+  return demoZCounter++;
 }
 
 export let demoShiftAdjustments = [];
