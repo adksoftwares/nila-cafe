@@ -18,81 +18,51 @@ import {
   LayoutGrid
 } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
-import { calculateBillTaxes } from '../../utils/tax.js';
+import { useCart } from '../../context/CartContext.jsx';
 
 export default function CartPanel({
-  orderType,
-  setOrderType,
-  tableNumber,
-  setTableNumber,
-  cart,
-  onChangeQty,
-  onChangeNotes,
-  onRemoveItem,
-  discount,
-  setDiscount,
-  discountMode,
-  setDiscountMode,
   customers = [],
-  selectedCustomer,
-  setSelectedCustomer,
-  pointsToRedeem = 0,
-  setPointsToRedeem,
-  appliedPromotion,
-  setAppliedPromotion,
   promotions = [],
   onOpenAddCustomer,
   onCheckout,
   onHoldTable,
   onOpenTableFloorPlan,
-  checkoutSubmitting = false,
-  taxConfig = {}
+  checkoutSubmitting = false
 }) {
+  const {
+    cart,
+    orderType,
+    setOrderType,
+    tableNumber,
+    setTableNumber,
+    discountMode,
+    setDiscountMode,
+    discount,
+    setDiscount,
+    selectedCustomer,
+    setSelectedCustomer,
+    pointsToRedeem,
+    setPointsToRedeem,
+    appliedPromotion,
+    setAppliedPromotion,
+    subtotal,
+    manualDiscount,
+    promoDiscount,
+    pointsDiscount,
+    totalDiscount,
+    taxes,
+    total,
+    totalItemCount,
+    pointsToEarn,
+    unitPrice,
+    changeQty,
+    changeNotes,
+    removeItem
+  } = useCart();
+
   const [activeNoteItemId, setActiveNoteItemId] = useState(null);
   const [promoInput, setPromoInput] = useState('');
   const [promoError, setPromoError] = useState('');
-
-  const unitPrice = p =>
-    Number(orderType === 'takeaway' ? p.takeaway_price : p.normal_price);
-
-  const subtotal = cart.reduce((s, i) => s + unitPrice(i.product) * i.qty, 0);
-
-  // 1. Manual Discount
-  const manualDiscount = Math.min(
-    subtotal,
-    discountMode === 'percent'
-      ? (subtotal * Math.max(0, Math.min(100, Number(discount) || 0))) / 100
-      : Math.max(0, Number(discount) || 0)
-  );
-
-  // 2. Promotion Code Discount
-  let promoDiscount = 0;
-  if (appliedPromotion) {
-    if (subtotal >= appliedPromotion.min_order_amount) {
-      promoDiscount = appliedPromotion.type === 'percentage'
-        ? Math.round(subtotal * (appliedPromotion.value / 100) * 100) / 100
-        : Math.min(subtotal, appliedPromotion.value);
-    }
-  }
-
-  // 3. Loyalty Points Discount
-  const pointsDiscount = Math.min(
-    Math.max(0, subtotal - manualDiscount - promoDiscount),
-    Number(pointsToRedeem) || 0
-  );
-
-  const totalDiscount = Math.round(Math.min(subtotal, manualDiscount + promoDiscount + pointsDiscount) * 100) / 100;
-
-  // Calculate Sri Lankan Dynamic Taxes & Service Charges
-  const taxes = calculateBillTaxes({
-    subtotal,
-    discount: totalDiscount,
-    orderType,
-    taxConfig
-  });
-  const total = taxes.grandTotal;
-  const totalItemCount = cart.reduce((s, i) => s + i.qty, 0);
-  const pointsToEarn = selectedCustomer ? Math.floor(total / 100) : 0;
 
   const orderTypes = [
     { id: 'takeaway', label: 'Takeaway', Icon: ShoppingBag },
@@ -250,7 +220,7 @@ export default function CartPanel({
                   <strong>{i.product.name}</strong>
                   <small>{money(unitPrice(i.product))} each</small>
                   <div className="qty-control">
-                    <button onClick={() => onChangeQty(i.product.id, i.qty - 1)}>
+                    <button onClick={() => changeQty(i.product.id, i.qty - 1)}>
                       <Minus size={12} />
                     </button>
                     <input
@@ -258,9 +228,9 @@ export default function CartPanel({
                       type="number"
                       min="1"
                       value={i.qty}
-                      onChange={e => onChangeQty(i.product.id, e.target.value)}
+                      onChange={e => changeQty(i.product.id, e.target.value)}
                     />
-                    <button onClick={() => onChangeQty(i.product.id, i.qty + 1)}>
+                    <button onClick={() => changeQty(i.product.id, i.qty + 1)}>
                       <Plus size={12} />
                     </button>
                   </div>
@@ -269,7 +239,7 @@ export default function CartPanel({
                   <strong>{money(unitPrice(i.product) * i.qty)}</strong>
                   <button
                     className="remove-btn"
-                    onClick={() => onRemoveItem(i.product.id)}
+                    onClick={() => removeItem(i.product.id)}
                     title="Remove item"
                   >
                     <X size={14} />
@@ -285,7 +255,7 @@ export default function CartPanel({
                       type="text"
                       placeholder="e.g. Less sugar, Oat milk, Extra hot"
                       value={i.notes || ''}
-                      onChange={e => onChangeNotes(i.product.id, e.target.value)}
+                      onChange={e => changeNotes(i.product.id, e.target.value)}
                       style={{ fontSize: '10px', height: '24px', padding: '0 6px', border: '1px solid #cbd5e1', borderRadius: '4px', flex: 1 }}
                       autoFocus
                     />

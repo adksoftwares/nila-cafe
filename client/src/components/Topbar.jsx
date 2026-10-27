@@ -1,13 +1,14 @@
 import React from 'react';
 import { Activity, Clock, DollarSign, CloudOff, CloudUpload, RefreshCw, WifiOff, Zap } from 'lucide-react';
 import { money } from '../utils/formatters.js';
+import { useShift } from '../context/ShiftContext.jsx';
 
 export default function Topbar({
   user,
   page,
   apiMode,
-  shift,
-  shiftSummary,
+  shift: propShift,
+  shiftSummary: propSummary,
   onOpenShiftModal,
   isOnline = true,
   offlineQueueCount = 0,
@@ -16,6 +17,10 @@ export default function Topbar({
   onKickDrawer,
   onFlash
 }) {
+  const { shift: ctxShift, shiftSummary: ctxSummary } = useShift();
+  const shift = propShift !== undefined ? propShift : ctxShift;
+  const shiftSummary = propSummary !== undefined ? propSummary : ctxSummary;
+
   const initial = user?.name?.[0]?.toUpperCase() || 'U';
   const expectedCash = shiftSummary?.expectedCash ?? (shift?.opening_float || 0);
 

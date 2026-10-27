@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
 import { X, Printer, DollarSign, ArrowUpRight, ArrowDownRight, Clock, AlertTriangle } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
+import { useShift } from '../../context/ShiftContext.jsx';
 
 export default function ShiftModal({
-  shift,
-  shiftSummary,
-  onOpenShift,
-  onCloseShift,
-  onAddAdjustment,
+  shift: propShift,
+  shiftSummary: propSummary,
+  onOpenShift: propOpenShift,
+  onCloseShift: propCloseShift,
+  onAddAdjustment: propAddAdjustment,
   onCloseModal
 }) {
+  const shiftCtx = useShift();
+  const shift = propShift !== undefined ? propShift : shiftCtx.shift;
+  const shiftSummary = propSummary !== undefined ? propSummary : shiftCtx.shiftSummary;
+  const onOpenShift = propOpenShift || shiftCtx.openShift;
+  const onCloseShift = propCloseShift || shiftCtx.closeShift;
+  const onAddAdjustment = propAddAdjustment || shiftCtx.addAdjustment;
+
   const [tab, setTab] = useState(shift ? 'status' : 'open');
   const [openingFloat, setOpeningFloat] = useState('5000');
   const [openNotes, setOpenNotes] = useState('');

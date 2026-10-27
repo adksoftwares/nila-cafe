@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Search, ChevronDown, Plus } from 'lucide-react';
 import { money } from '../../utils/formatters.js';
+import { useCart } from '../../context/CartContext.jsx';
 
 export default function ProductCatalog({
   products,
@@ -9,9 +10,12 @@ export default function ProductCatalog({
   categories,
   search,
   setSearch,
-  orderType,
-  onAddProduct
+  orderType: propOrderType,
+  onAddProduct: propOnAddProduct
 }) {
+  const { orderType: ctxOrderType, addToCart } = useCart();
+  const orderType = propOrderType || ctxOrderType;
+  const onAddProduct = propOnAddProduct || addToCart;
   const searchInputRef = useRef(null);
 
   // Implement real Cmd+K / Ctrl+K keyboard shortcut!

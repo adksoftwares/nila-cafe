@@ -4,6 +4,10 @@ import { initialProducts, demoUser, API } from './utils/constants.js';
 import { request } from './api.js';
 import { queueOfflineSale, getOfflineQueue, removeOfflineSale } from './utils/offlineQueue.js';
 
+// Contexts
+import { CartProvider, useCart } from './context/CartContext.jsx';
+import { ShiftProvider, useShift } from './context/ShiftContext.jsx';
+
 // Components
 import Sidebar from './components/Sidebar.jsx';
 import Topbar from './components/Topbar.jsx';
@@ -31,17 +35,35 @@ import ReportsPage from './pages/ReportsPage.jsx';
 import AdminShopsPage from './pages/AdminShopsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 
-export default function App() {
-  const [token, setToken] = useState(localStorage.getItem('pos_token') || '');
-  const [user, setUser] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('pos_user'));
-    } catch {
-      return null;
-    }
-  });
+function MainPOSApp({
+  token,
+  user,
+  setUser,
+  setToken,
+  api,
+  apiMode,
+  setApiMode,
+  isOnline,
+  offlineQueueCount,
+  setOfflineQueueCount,
+  isSyncing,
+  syncOfflineQueue,
+  flash,
+  notice
+}) {
+  const {
+    cart,
+    orderType,
+    tableNumber,
+    setTableNumber,
+    clearCart,
+    loadTableTab,
+    setTaxConfig
+  } = useCart();
 
-  const [page, setPage] = useState('POS');
+  const { loadShift } = useShift();
+
+  const [page, setPage] = useState(user?.role === 'admin' ? 'Overview' : 'POS');
   const [products, setProducts] = useState(initialProducts);
   const [sales, setSales] = useState(() => {
     try {
@@ -51,158 +73,19 @@ export default function App() {
     }
   });
 
-  const [orderType, setOrderType] = useState('takeaway');
-  const [tableNumber, setTableNumber] = useState('Table 1');
-  const [cart, setCart] = useState([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All items');
-  const [discountMode, setDiscountMode] = useState('percent');
-  const [discount, setDiscount] = useState(0);
-
   const [customers, setCustomers] = useState([]);
   const [promotions, setPromotions] = useState([]);
-  const [taxConfig, setTaxConfig] = useState({
-    service_charge_enabled: true,
-    service_charge_rate: 10.0,
-    sscl_enabled: true,
-    sscl_rate: 2.5,
-    vat_enabled: true,
-    vat_rate: 18.0
-  });
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [pointsToRedeem, setPointsToRedeem] = useState(0);
-  const [appliedPromotion, setAppliedPromotion] = useState(null);
 
-  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
-  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState('');
   const [lastReceipt, setLastReceipt] = useState(null);
   const [selectedVoidSale, setSelectedVoidSale] = useState(null);
   const [checkoutSubmitting, setCheckoutSubmitting] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(null);
 
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState('');
-
   const [shopName] = useState('Nila Cafe');
   const [adminShops, setAdminShops] = useState([]);
-  const [apiMode, setApiMode] = useState('demo');
-
-  const [shift, setShift] = useState(null);
-  const [shiftSummary, setShiftSummary] = useState(null);
-
-  const flash = (msg) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(''), 3200);
-  };
-
-  const api = (path, options = {}) => request(path, options, token);
-
-  // Check health and mode on mount
-  useEffect(() => {
-    fetch(API.replace(/\/api$/, '') + '/api/health')
-      .then(r => r.json())
-      .then(d => setApiMode(d.database === 'connected' ? 'connected' : d.mode || 'demo'))
-      .catch(() => setApiMode('offline'));
-  }, []);
-
-  // Monitor network connectivity & auto-sync offline queue
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      flash('Connection restored. Syncing offline orders...');
-      syncOfflineQueue();
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-      flash('Network offline. POS operating in local offline mode.');
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    getOfflineQueue().then(q => setOfflineQueueCount(q.length));
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [token]);
-
-  // Sync pending offline orders with idempotent protection
-  const syncOfflineQueue = async () => {
-    if (!token || isSyncing) return;
-    try {
-      setIsSyncing(true);
-      const queue = await getOfflineQueue();
-      if (!queue.length) {
-        setOfflineQueueCount(0);
-        return;
-      }
-
-      let syncedCount = 0;
-      for (const item of queue) {
-        try {
-          await api('/sales', {
-            method: 'POST',
-            headers: {
-              'Idempotency-Key': item.idempotencyKey
-            },
-            body: JSON.stringify(item.payload)
-          });
-          await removeOfflineSale(item.id);
-          syncedCount++;
-        } catch (err) {
-          console.warn('Sync attempt for order', item.id, err.message);
-          // If already saved or conflict, safe to clean
-          if (err.message.includes('already exists') || err.message.includes('Idempotency')) {
-            await removeOfflineSale(item.id);
-          }
-        }
-      }
-
-      const remaining = await getOfflineQueue();
-      setOfflineQueueCount(remaining.length);
-
-      if (syncedCount > 0) {
-        flash(`Synced ${syncedCount} offline order(s) successfully.`);
-        loadSales();
-        loadShift();
-        loadCustomers();
-      }
-    } catch (err) {
-      console.warn('Offline sync error:', err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Verify session
-  useEffect(() => {
-    if (!token || !user) return;
-    api('/auth/me')
-      .then(d => setUser(d.user))
-      .catch(() => {
-        localStorage.removeItem('pos_token');
-        localStorage.removeItem('pos_user');
-        setToken('');
-        setUser(null);
-      });
-  }, [token]);
-
-  const loadShift = () => {
-    if (!token || !user || user.role === 'admin') return;
-    api('/shifts/current')
-      .then(d => {
-        setShift(d.shift);
-        setShiftSummary(d.summary);
-      })
-      .catch(() => {});
-  };
 
   const loadSales = () => {
     if (!token || !user) return;
@@ -252,7 +135,7 @@ export default function App() {
       .catch(() => {});
   };
 
-  // Load shop data / admin data / shift data
+  // Load shop data / admin data
   useEffect(() => {
     if (!user) return;
     if (user.role === 'admin') {
@@ -268,7 +151,6 @@ export default function App() {
       })
       .catch(() => {});
 
-    loadShift();
     loadSales();
     loadCustomers();
     loadPromotions();
@@ -280,90 +162,13 @@ export default function App() {
     [products]
   );
 
-  const handleLogin = async (loginEmail, loginPassword) => {
-    setLoginLoading(true);
-    setLoginError('');
-
-    try {
-      let data;
-      try {
-        data = await api('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email: loginEmail, password: loginPassword })
-        });
-      } catch (err) {
-        if (err.message.includes('fetch') || err.message.includes('Failed to fetch')) {
-          const demo =
-            loginEmail === 'owner@counterpoint.local' && loginPassword === 'Owner123!'
-              ? demoUser
-              : loginEmail === 'manager@counterpoint.local' && loginPassword === 'Manager123!'
-              ? { id: 'u-manager', name: 'Store Manager', email: loginEmail, role: 'manager', shop_id: 'shop-demo' }
-              : loginEmail === 'cashier@counterpoint.local' && loginPassword === 'Cashier123!'
-              ? { id: 'u-cashier', name: 'Cashier One', email: loginEmail, role: 'cashier', shop_id: 'shop-demo' }
-              : loginEmail === 'waiter@counterpoint.local' && loginPassword === 'Waiter123!'
-              ? { id: 'u-waiter', name: 'Service Staff', email: loginEmail, role: 'waiter', shop_id: 'shop-demo' }
-              : loginEmail === 'admin@counterpoint.local' && loginPassword === 'Admin123!'
-              ? { id: 'u-admin', name: 'System Admin', email: loginEmail, role: 'admin', shop_id: null }
-              : null;
-
-          if (!demo) {
-            throw new Error('Cannot connect to API. Use demo: owner@counterpoint.local / Owner123!');
-          }
-          data = { token: 'demo-session-' + Date.now(), user: demo };
-          setApiMode('offline');
-        } else {
-          throw err;
-        }
-      }
-
-      setToken(data.token);
-      setUser(data.user);
-      localStorage.setItem('pos_token', data.token);
-      localStorage.setItem('pos_user', JSON.stringify(data.user));
-      setPage(data.user.role === 'admin' ? 'Overview' : 'POS');
-    } catch (err) {
-      setLoginError(err.message);
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
   const handleLogout = () => {
     setToken('');
     setUser(null);
     localStorage.removeItem('pos_token');
     localStorage.removeItem('pos_user');
-    setCart([]);
+    clearCart();
     setPage('POS');
-  };
-
-  const handleAddProductToCart = (p) => {
-    setCart(old => {
-      const found = old.find(i => i.product.id === p.id);
-      return found
-        ? old.map(i => (i.product.id === p.id ? { ...i, qty: i.qty + 1 } : i))
-        : [...old, { product: p, qty: 1 }];
-    });
-  };
-
-  const handleChangeQty = (id, val) => {
-    setCart(old =>
-      old.map(i =>
-        i.product.id === id
-          ? { ...i, qty: Math.max(1, Math.min(999, Number(val) || 1)) }
-          : i
-      )
-    );
-  };
-
-  const handleChangeNotes = (id, notes) => {
-    setCart(old =>
-      old.map(i => (i.product.id === id ? { ...i, notes } : i))
-    );
-  };
-
-  const handleRemoveItem = (id) => {
-    setCart(old => old.filter(i => i.product.id !== id));
   };
 
   const handleHoldTable = async (details) => {
@@ -386,7 +191,7 @@ export default function App() {
 
       if (res.success) {
         flash(res.message || `Table ${tableNumber} sent to kitchen as Open Tab!`, 'success');
-        setCart([]); // Clear cart as order is held on open table
+        clearCart();
         loadSales();
       }
     } catch (err) {
@@ -397,26 +202,8 @@ export default function App() {
   };
 
   const handleLoadActiveTableOrder = (table) => {
-    setOrderType('dining');
-    setTableNumber(table.table_number);
-    if (table.items?.length) {
-      setCart(table.items.map(item => {
-        const prod = products.find(p => p.id === item.product_id || p.code === item.code) || {
-          id: item.product_id,
-          name: item.name,
-          code: item.code,
-          normal_price: item.price,
-          takeaway_price: item.price,
-          stock: 99
-        };
-        return {
-          product: prod,
-          qty: item.qty || 1,
-          notes: item.notes || ''
-        };
-      }));
-      flash(`Loaded Open Tab for ${table.table_number}`, 'success');
-    }
+    loadTableTab(table, products);
+    flash(`Loaded Open Tab for ${table.table_number}`, 'success');
   };
 
   const handleCheckout = (checkoutDetails) => {
@@ -547,11 +334,7 @@ export default function App() {
 
     setModal('receipt');
     setLastReceipt(sale);
-    setCart([]);
-    setDiscount(0);
-    setSelectedCustomer(null);
-    setPointsToRedeem(0);
-    setAppliedPromotion(null);
+    clearCart();
     setPendingCheckout(null);
     loadShift();
     loadSales();
@@ -567,7 +350,6 @@ export default function App() {
       });
       flash(`Customer ${res.customer.name} registered.`);
       loadCustomers();
-      setSelectedCustomer(res.customer);
       return res;
     } catch (err) {
       throw err;
@@ -643,48 +425,6 @@ export default function App() {
     }
   };
 
-  const handleOpenShift = async ({ openingFloat, notes }) => {
-    try {
-      const res = await api('/shifts/open', {
-        method: 'POST',
-        body: JSON.stringify({ openingFloat, notes })
-      });
-      setShift(res.shift);
-      loadShift();
-      flash('Till shift opened successfully.');
-      setModal('');
-    } catch (e) {
-      flash(e.message);
-    }
-  };
-
-  const handleAddAdjustment = async ({ type, amount, reason }) => {
-    try {
-      await api('/shifts/adjustment', {
-        method: 'POST',
-        body: JSON.stringify({ type, amount, reason })
-      });
-      loadShift();
-      flash(`Recorded ${type === 'cash_in' ? 'Cash In (Float Add)' : 'Payout (Petty Cash)'}.`);
-    } catch (e) {
-      flash(e.message);
-    }
-  };
-
-  const handleCloseShift = async ({ actualCash, notes }) => {
-    try {
-      const res = await api('/shifts/close', {
-        method: 'POST',
-        body: JSON.stringify({ actualCash, notes })
-      });
-      setShift(res.shift);
-      flash('Shift closed. Official Z-Report generated.');
-      return res;
-    } catch (e) {
-      flash(e.message);
-    }
-  };
-
   const handleQuickKickDrawer = async () => {
     try {
       const res = await api('/printer/open-drawer', { method: 'POST' });
@@ -697,20 +437,6 @@ export default function App() {
       flash('Cash drawer kicked via pulse', 'success');
     }
   };
-
-  if (!user) {
-    return (
-      <>
-        <LoginScreen
-          onLogin={handleLogin}
-          loading={loginLoading}
-          error={loginError}
-          onFlash={flash}
-        />
-        <Toast message={notice} />
-      </>
-    );
-  }
 
   const admin = user.role === 'admin';
 
@@ -731,8 +457,6 @@ export default function App() {
           user={user}
           page={page}
           apiMode={apiMode}
-          shift={shift}
-          shiftSummary={shiftSummary}
           onOpenShiftModal={() => setModal('shift')}
           isOnline={isOnline}
           offlineQueueCount={offlineQueueCount}
@@ -752,33 +476,13 @@ export default function App() {
               categories={categories}
               search={search}
               setSearch={setSearch}
-              orderType={orderType}
-              setOrderType={setOrderType}
-              tableNumber={tableNumber}
-              setTableNumber={setTableNumber}
-              cart={cart}
-              onAddProduct={handleAddProductToCart}
-              onChangeQty={handleChangeQty}
-              onChangeNotes={handleChangeNotes}
-              onRemoveItem={handleRemoveItem}
-              discount={discount}
-              setDiscount={setDiscount}
-              discountMode={discountMode}
-              setDiscountMode={setDiscountMode}
               customers={customers}
-              selectedCustomer={selectedCustomer}
-              setSelectedCustomer={setSelectedCustomer}
-              pointsToRedeem={pointsToRedeem}
-              setPointsToRedeem={setPointsToRedeem}
-              appliedPromotion={appliedPromotion}
-              setAppliedPromotion={setAppliedPromotion}
               promotions={promotions}
               onOpenAddCustomer={() => setModal('customer')}
               onCheckout={handleCheckout}
               onHoldTable={handleHoldTable}
               onOpenTableFloorPlan={() => setModal('table')}
               checkoutSubmitting={checkoutSubmitting}
-              taxConfig={taxConfig}
             />
           )}
 
@@ -879,11 +583,6 @@ export default function App() {
 
       {modal === 'shift' && (
         <ShiftModal
-          shift={shift}
-          shiftSummary={shiftSummary}
-          onOpenShift={handleOpenShift}
-          onCloseShift={handleCloseShift}
-          onAddAdjustment={handleAddAdjustment}
           onCloseModal={() => setModal('')}
         />
       )}
@@ -928,5 +627,204 @@ export default function App() {
 
       <Toast message={notice} />
     </div>
+  );
+}
+
+export default function App() {
+  const [token, setToken] = useState(localStorage.getItem('pos_token') || '');
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('pos_user'));
+    } catch {
+      return null;
+    }
+  });
+
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [apiMode, setApiMode] = useState('demo');
+
+  const flash = (msg) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 3200);
+  };
+
+  const api = (path, options = {}) => request(path, options, token);
+
+  // Check health and mode on mount
+  useEffect(() => {
+    fetch(API.replace(/\/api$/, '') + '/api/health')
+      .then(r => r.json())
+      .then(d => setApiMode(d.database === 'connected' ? 'connected' : d.mode || 'demo'))
+      .catch(() => setApiMode('offline'));
+  }, []);
+
+  // Monitor network connectivity & auto-sync offline queue
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      flash('Connection restored. Syncing offline orders...');
+      syncOfflineQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      flash('Network offline. POS operating in local offline mode.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    getOfflineQueue().then(q => setOfflineQueueCount(q.length));
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [token]);
+
+  // Sync pending offline orders with idempotent protection
+  const syncOfflineQueue = async () => {
+    if (!token || isSyncing) return;
+    try {
+      setIsSyncing(true);
+      const queue = await getOfflineQueue();
+      if (!queue.length) {
+        setOfflineQueueCount(0);
+        return;
+      }
+
+      let syncedCount = 0;
+      for (const item of queue) {
+        try {
+          await api('/sales', {
+            method: 'POST',
+            headers: {
+              'Idempotency-Key': item.idempotencyKey
+            },
+            body: JSON.stringify(item.payload)
+          });
+          await removeOfflineSale(item.id);
+          syncedCount++;
+        } catch (err) {
+          console.warn('Sync attempt for order', item.id, err.message);
+          if (err.message.includes('already exists') || err.message.includes('Idempotency')) {
+            await removeOfflineSale(item.id);
+          }
+        }
+      }
+
+      const remaining = await getOfflineQueue();
+      setOfflineQueueCount(remaining.length);
+
+      if (syncedCount > 0) {
+        flash(`Synced ${syncedCount} offline order(s) successfully.`);
+      }
+    } catch (err) {
+      console.warn('Offline sync error:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Verify session
+  useEffect(() => {
+    if (!token || !user) return;
+    api('/auth/me')
+      .then(d => setUser(d.user))
+      .catch(() => {
+        localStorage.removeItem('pos_token');
+        localStorage.removeItem('pos_user');
+        setToken('');
+        setUser(null);
+      });
+  }, [token]);
+
+  const handleLogin = async (loginEmail, loginPassword) => {
+    setLoginLoading(true);
+    setLoginError('');
+
+    try {
+      let data;
+      try {
+        data = await api('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: loginEmail, password: loginPassword })
+        });
+      } catch (err) {
+        if (err.message.includes('fetch') || err.message.includes('Failed to fetch')) {
+          const demo =
+            loginEmail === 'owner@counterpoint.local' && loginPassword === 'Owner123!'
+              ? demoUser
+              : loginEmail === 'manager@counterpoint.local' && loginPassword === 'Manager123!'
+              ? { id: 'u-manager', name: 'Store Manager', email: loginEmail, role: 'manager', shop_id: 'shop-demo' }
+              : loginEmail === 'cashier@counterpoint.local' && loginPassword === 'Cashier123!'
+              ? { id: 'u-cashier', name: 'Cashier One', email: loginEmail, role: 'cashier', shop_id: 'shop-demo' }
+              : loginEmail === 'waiter@counterpoint.local' && loginPassword === 'Waiter123!'
+              ? { id: 'u-waiter', name: 'Service Staff', email: loginEmail, role: 'waiter', shop_id: 'shop-demo' }
+              : loginEmail === 'admin@counterpoint.local' && loginPassword === 'Admin123!'
+              ? { id: 'u-admin', name: 'System Admin', email: loginEmail, role: 'admin', shop_id: null }
+              : null;
+
+          if (!demo) {
+            throw new Error('Cannot connect to API. Use demo: owner@counterpoint.local / Owner123!');
+          }
+          data = { token: 'demo-session-' + Date.now(), user: demo };
+          setApiMode('offline');
+        } else {
+          throw err;
+        }
+      }
+
+      setToken(data.token);
+      setUser(data.user);
+      localStorage.setItem('pos_token', data.token);
+      localStorage.setItem('pos_user', JSON.stringify(data.user));
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <>
+        <LoginScreen
+          onLogin={handleLogin}
+          loading={loginLoading}
+          error={loginError}
+          onFlash={flash}
+        />
+        <Toast message={notice} />
+      </>
+    );
+  }
+
+  return (
+    <ShiftProvider api={api} user={user} onFlash={flash}>
+      <CartProvider>
+        <MainPOSApp
+          token={token}
+          user={user}
+          setUser={setUser}
+          setToken={setToken}
+          api={api}
+          apiMode={apiMode}
+          setApiMode={setApiMode}
+          isOnline={isOnline}
+          offlineQueueCount={offlineQueueCount}
+          setOfflineQueueCount={setOfflineQueueCount}
+          isSyncing={isSyncing}
+          syncOfflineQueue={syncOfflineQueue}
+          flash={flash}
+          notice={notice}
+        />
+      </CartProvider>
+    </ShiftProvider>
   );
 }

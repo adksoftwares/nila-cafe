@@ -11,33 +11,13 @@ export default function POSPage({
   categories,
   search,
   setSearch,
-  orderType,
-  setOrderType,
-  tableNumber,
-  setTableNumber,
-  cart,
-  onAddProduct,
-  onChangeQty,
-  onChangeNotes,
-  onRemoveItem,
-  discount,
-  setDiscount,
-  discountMode,
-  setDiscountMode,
   customers,
-  selectedCustomer,
-  setSelectedCustomer,
-  pointsToRedeem,
-  setPointsToRedeem,
-  appliedPromotion,
-  setAppliedPromotion,
   promotions,
   onOpenAddCustomer,
   onCheckout,
   onHoldTable,
   onOpenTableFloorPlan,
-  checkoutSubmitting,
-  taxConfig
+  checkoutSubmitting
 }) {
   const currentHour = new Date().getHours();
   const greeting =
@@ -73,37 +53,16 @@ export default function POSPage({
           categories={categories}
           search={search}
           setSearch={setSearch}
-          orderType={orderType}
-          onAddProduct={onAddProduct}
         />
 
         <CartPanel
-          orderType={orderType}
-          setOrderType={setOrderType}
-          tableNumber={tableNumber}
-          setTableNumber={setTableNumber}
-          cart={cart}
-          onChangeQty={onChangeQty}
-          onChangeNotes={onChangeNotes}
-          onRemoveItem={onRemoveItem}
-          discount={discount}
-          setDiscount={setDiscount}
-          discountMode={discountMode}
-          setDiscountMode={setDiscountMode}
           customers={customers}
-          selectedCustomer={selectedCustomer}
-          setSelectedCustomer={setSelectedCustomer}
-          pointsToRedeem={pointsToRedeem}
-          setPointsToRedeem={setPointsToRedeem}
-          appliedPromotion={appliedPromotion}
-          setAppliedPromotion={setAppliedPromotion}
           promotions={promotions}
           onOpenAddCustomer={onOpenAddCustomer}
           onCheckout={onCheckout}
           onHoldTable={onHoldTable}
           onOpenTableFloorPlan={onOpenTableFloorPlan}
           checkoutSubmitting={checkoutSubmitting}
-          taxConfig={taxConfig}
         />
       </div>
     </>
