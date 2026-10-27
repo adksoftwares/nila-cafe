@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Clock, DollarSign, CloudOff, CloudUpload, RefreshCw, WifiOff, Zap } from 'lucide-react';
+import { Activity, Clock, DollarSign, CloudOff, CloudUpload, RefreshCw, WifiOff, Zap, LogOut } from 'lucide-react';
 import { money } from '../utils/formatters.js';
 import { useShift } from '../context/ShiftContext.jsx';
 
@@ -15,6 +15,7 @@ export default function Topbar({
   isSyncing = false,
   onTriggerSync,
   onKickDrawer,
+  onLogout,
   onFlash
 }) {
   const { shift: ctxShift, shiftSummary: ctxSummary } = useShift();
@@ -153,7 +154,33 @@ export default function Topbar({
         >
           <Activity size={18} />
         </button>
-        <div className="top-avatar">{initial}</div>
+        <div className="top-avatar" title={`${user?.name || 'User'} (${user?.role || ''})`}>{initial}</div>
+        {onLogout && (
+          <button
+            type="button"
+            className="topbar-logout-btn"
+            onClick={onLogout}
+            title="Log out of Nila Cafe"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: '5px 11px',
+              borderRadius: '20px',
+              fontSize: '11px',
+              fontWeight: 600,
+              border: '1px solid #fecdd3',
+              background: '#fff1f2',
+              color: '#e11d48',
+              cursor: 'pointer',
+              marginLeft: '4px',
+              transition: 'background 0.15s, border-color 0.15s'
+            }}
+          >
+            <LogOut size={12} />
+            <span>Logout</span>
+          </button>
+        )}
       </div>
     </header>
   );

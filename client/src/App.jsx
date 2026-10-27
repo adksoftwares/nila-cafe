@@ -480,6 +480,7 @@ function MainPOSApp({
           isSyncing={isSyncing}
           onTriggerSync={syncOfflineQueue}
           onKickDrawer={handleQuickKickDrawer}
+          onLogout={handleLogout}
           onFlash={flash}
         />
 

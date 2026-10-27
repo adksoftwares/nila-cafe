@@ -100,6 +100,15 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
           <Settings size={18} /> Settings
         </button>
 
+        <button
+          className="nav-item"
+          onClick={onLogout}
+          style={{ color: '#e11d48', marginTop: '2px' }}
+          title="Sign out of your session"
+        >
+          <LogOut size={18} /> Logout
+        </button>
+
         <div className="profile">
           <div className="avatar">{initials}</div>
           <div className="profile-text">
