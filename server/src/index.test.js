@@ -7,6 +7,7 @@ import {
   generateReceiptESCPOS,
   generateXReportESCPOS,
   generateZReportESCPOS,
+  generateDiagnosticTestESCPOS,
   formatTwoColumns
 } from './utils/escpos.js';
 import { checkoutSchema, voidSaleSchema } from './schemas/sales.js';
@@ -1474,6 +1475,64 @@ test('Audit Trail Query & Search Engine: filters by category, severity, and free
   assert.equal(paged.logs.length, 2);
   assert.equal(paged.logs[0].id, 'log-2');
 });
+
+test('ESC/POS Diagnostic Hardware Test Pattern: compiles standard 80mm and 58mm test printouts', () => {
+  // Test 80mm diagnostic print
+  const buf80 = generateDiagnosticTestESCPOS({ width: '80mm', shopName: 'Nila Cafe', pulseDrawer: true });
+  assert.ok(buf80 instanceof Uint8Array);
+  assert.ok(buf80.length > 100);
+
+  // Validate drawer kick pulse (0x1B, 0x70, 0x00) present
+  const hasKick = (buf) => {
+    for (let i = 0; i < buf.length - 2; i++) {
+      if (buf[i] === 0x1B && buf[i + 1] === 0x70 && buf[i + 2] === 0x00) return true;
+    }
+    return false;
+  };
+  assert.equal(hasKick(buf80), true);
+
+  // Validate paper cut command (0x1D, 0x56) present
+  const hasCut = (buf) => {
+    for (let i = 0; i < buf.length - 2; i++) {
+      if (buf[i] === 0x1D && buf[i + 1] === 0x56) return true;
+    }
+    return false;
+  };
+  assert.equal(hasCut(buf80), true);
+
+  // Test 58mm diagnostic print
+  const buf58 = generateDiagnosticTestESCPOS({ width: '58mm', shopName: 'Nila Cafe', pulseDrawer: false });
+  assert.ok(buf58 instanceof Uint8Array);
+  assert.ok(buf58.length > 100);
+  assert.equal(hasKick(buf58), false);
+  assert.equal(hasCut(buf58), true);
+});
+
+test('ESC/POS Alignment Commands: validates Left, Center, and Right byte sequences in diagnostic payload', () => {
+  const buf = generateDiagnosticTestESCPOS({ width: '80mm' });
+
+  const hasSequence = (buf, seq) => {
+    for (let i = 0; i <= buf.length - seq.length; i++) {
+      let match = true;
+      for (let j = 0; j < seq.length; j++) {
+        if (buf[i + j] !== seq[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return true;
+    }
+    return false;
+  };
+
+  // Align Left: 0x1B 0x61 0x00
+  assert.equal(hasSequence(buf, [0x1B, 0x61, 0x00]), true);
+  // Align Center: 0x1B 0x61 0x01
+  assert.equal(hasSequence(buf, [0x1B, 0x61, 0x01]), true);
+  // Align Right: 0x1B 0x61 0x02
+  assert.equal(hasSequence(buf, [0x1B, 0x61, 0x02]), true);
+});
+
 
 
 

@@ -365,3 +365,85 @@ export function generateZReportESCPOS(report, options = {}) {
 export function generateDrawerKickESCPOS() {
   return new Uint8Array([ESC, 0x70, 0x00, 0x19, 0xFA]);
 }
+
+/**
+ * Compiles a comprehensive ESC/POS hardware diagnostic self-test printout.
+ * Verifies character encoding, bolding, sizing, alignments, margins, and paper cutting.
+ */
+export function generateDiagnosticTestESCPOS({
+  width = '80mm',
+  shopName = 'Nila Cafe',
+  printerIp = null,
+  pulseDrawer = false
+} = {}) {
+  const is58mm = width === '58mm' || width === 58;
+  const cols = is58mm ? 32 : 48;
+  const divider = '-'.repeat(cols);
+  const doubleDivider = '='.repeat(cols);
+
+  const chunks = [];
+  const add = (cmd) => chunks.push(cmd);
+  const encoder = new TextEncoder();
+  const addText = (str) => add(encoder.encode(str + '\n'));
+
+  // 1. Initialize
+  add(ESCPOS_COMMANDS.INIT);
+
+  // 2. Optional cash drawer pulse
+  if (pulseDrawer) {
+    add(ESCPOS_COMMANDS.DRAWER_KICK_PIN2);
+  }
+
+  // 3. Header
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  add(ESCPOS_COMMANDS.DOUBLE_SIZE_ON);
+  addText(shopName);
+  add(ESCPOS_COMMANDS.NORMAL_SIZE);
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('HARDWARE DIAGNOSTIC TEST');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(new Date().toLocaleString('en-LK'));
+  addText(doubleDivider);
+
+  // 4. Alignment Test
+  add(ESCPOS_COMMANDS.ALIGN_LEFT);
+  addText('[LEFT ALIGNED TEXT]');
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  addText('[CENTER ALIGNED TEXT]');
+  add(ESCPOS_COMMANDS.ALIGN_RIGHT);
+  addText('[RIGHT ALIGNED TEXT]');
+  add(ESCPOS_COMMANDS.ALIGN_LEFT);
+  addText(divider);
+
+  // 5. Typography & Font Weights
+  addText('Normal font: 1234567890 ABCDEFGHIJKLMNOP');
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText('Bold font:   1234567890 ABCDEFGHIJKLMNOP');
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(divider);
+
+  // 6. Two-Column Margin Alignment (48 col or 32 col)
+  add(ESCPOS_COMMANDS.BOLD_ON);
+  addText(`COLUMN MARGIN TEST (${cols} COLS):`);
+  add(ESCPOS_COMMANDS.BOLD_OFF);
+  addText(formatTwoColumns('Left Margin Text', 'Right Margin Text', cols));
+  addText(formatTwoColumns('Item 01: Espresso', 'LKR 450.00', cols));
+  addText(formatTwoColumns('Item 02: Chicken Burger', 'LKR 950.00', cols));
+  addText(formatTwoColumns('Subtotal Amount', 'LKR 1,400.00', cols));
+  addText(divider);
+
+  // 7. Diagnostics Info
+  addText(`Paper Profile:     ${is58mm ? '58mm (32 Col)' : '80mm (48 Col)'}`);
+  addText(`Printer Interface: ${printerIp ? `TCP ${printerIp}:9100` : 'Direct WebUSB / Serial'}`);
+  addText(`Cash Drawer Pulse: ${pulseDrawer ? 'ACTIVE (Pin 2)' : 'OFF'}`);
+  addText(doubleDivider);
+
+  // 8. Footer & Cut
+  add(ESCPOS_COMMANDS.ALIGN_CENTER);
+  addText('*** ESC/POS SELF-TEST PASSED ***');
+  addText('Thermal printer hardware is operational.');
+  add(ESCPOS_COMMANDS.FEED_3);
+  add(ESCPOS_COMMANDS.CUT_PAPER);
+
+  return concatBuffers(chunks);
+}

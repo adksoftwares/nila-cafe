@@ -578,6 +578,8 @@ function MainPOSApp({
               user={user}
               shopName={shopName}
               apiMode={apiMode}
+              api={api}
+              onFlash={flash}
               onLogout={handleLogout}
             />
           )}

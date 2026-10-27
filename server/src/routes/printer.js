@@ -6,7 +6,8 @@ import {
   generateDrawerKickESCPOS,
   generateReceiptESCPOS,
   generateXReportESCPOS,
-  generateZReportESCPOS
+  generateZReportESCPOS,
+  generateDiagnosticTestESCPOS
 } from '../utils/escpos.js';
 
 const router = Router();
@@ -51,6 +52,48 @@ router.get('/status', auth, (req, res) => {
     port: printerPort,
     paperWidth,
     mode: printerIp ? 'hardware-tcp' : 'client-driver-mode'
+  });
+});
+
+// Printer: Diagnostic Hardware Self-Test
+router.post('/test-print', auth, roles('owner', 'manager', 'cashier'), async (req, res) => {
+  const { width = 80, pulseDrawer = false, printerIp: customIp, printerPort: customPort } = req.body;
+
+  const targetIp = customIp || process.env.PRINTER_IP || null;
+  const targetPort = Number(customPort || process.env.PRINTER_PORT || 9100);
+
+  const buffer = generateDiagnosticTestESCPOS({
+    width: Number(width) === 58 ? '58mm' : '80mm',
+    shopName: 'Nila Cafe',
+    printerIp: targetIp,
+    pulseDrawer: Boolean(pulseDrawer)
+  });
+
+  let transmitted = false;
+  if (targetIp) {
+    try {
+      await sendToNetworkPrinter(targetIp, targetPort, buffer);
+      transmitted = true;
+    } catch (err) {
+      return res.status(502).json({
+        error: `Could not connect to printer at ${targetIp}:${targetPort}: ${err.message}`,
+        transmitted: false,
+        bytesLength: buffer.length,
+        escposBase64: Buffer.from(buffer).toString('base64'),
+        escposHex: Buffer.from(buffer).toString('hex')
+      });
+    }
+  }
+
+  res.json({
+    success: true,
+    message: transmitted
+      ? 'Diagnostic self-test printout sent to network printer.'
+      : 'Diagnostic self-test ESC/POS buffer compiled successfully.',
+    transmitted,
+    bytesLength: buffer.length,
+    escposBase64: Buffer.from(buffer).toString('base64'),
+    escposHex: Buffer.from(buffer).toString('hex')
   });
 });
 
