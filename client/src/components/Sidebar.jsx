@@ -121,6 +121,16 @@ export default function Sidebar({ user, page, setPage, salesCount, shopName, onL
             <LogOut size={17} />
           </button>
         </div>
+
+        <div className="sidebar-software-footer" style={{
+          padding: '8px 12px 14px',
+          textAlign: 'center',
+          fontSize: '10px',
+          color: '#94a3b8',
+          letterSpacing: '0.2px'
+        }}>
+          Softwared by <strong style={{ color: '#64748b' }}>ADK Software Solutions</strong>
+        </div>
       </div>
     </aside>
   );

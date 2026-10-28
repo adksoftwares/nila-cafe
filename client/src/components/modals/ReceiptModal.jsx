@@ -237,6 +237,17 @@ export default function ReceiptModal({ receipt, shopName, onClose, api, onFlash 
               </div>
             )}
             <p className="receipt-thanks">Thank you for visiting ADK Cafe. Come again!</p>
+            <div style={{
+              textAlign: 'center',
+              fontSize: '10px',
+              fontWeight: 600,
+              color: '#475569',
+              marginTop: '6px',
+              paddingTop: '6px',
+              borderTop: '1px dashed #cbd5e1'
+            }}>
+              Softwared by ADK Software Solutions
+            </div>
           </div>
         ) : (
           /* KITCHEN ORDER TICKET (KOT) */

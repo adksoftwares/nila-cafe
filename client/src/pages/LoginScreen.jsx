@@ -43,7 +43,7 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
           </div>
         </div>
 
-        <div className="art-footer">Thoughtfully built for the everyday modern cafe.</div>
+        <div className="art-footer">Thoughtfully built for the everyday modern cafe · Softwared by ADK Software Solutions</div>
       </div>
 
       <div className="login-panel">
@@ -139,7 +139,7 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
             <small>Demo Password: Owner123! / Manager123! / Cashier123! · Manager PIN: 8844</small>
           </div>
 
-          <p className="login-legal">Secure token authentication · Multi-tenant isolated workspace</p>
+          <p className="login-legal">Secure token authentication · Softwared by <strong>ADK Software Solutions</strong></p>
         </form>
       </div>
     </div>

@@ -642,6 +642,24 @@ function MainPOSApp({
             />
           )}
         </div>
+
+        <footer className="app-software-footer" style={{
+          textAlign: 'center',
+          padding: '14px 20px',
+          fontSize: '11px',
+          color: '#64748b',
+          borderTop: '1px solid #e2e8f0',
+          background: '#fff',
+          marginTop: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '6px'
+        }}>
+          <span>ADK Cafe POS</span>
+          <span>•</span>
+          <span>Softwared by <strong style={{ color: '#0f172a' }}>ADK Software Solutions</strong></span>
+        </footer>
       </main>
 
       {modal === 'receipt' && (

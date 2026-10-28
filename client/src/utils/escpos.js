@@ -177,7 +177,7 @@ export function generateReceiptESCPOS(sale, options = {}) {
   add(ESCPOS_COMMANDS.ALIGN_CENTER);
   addText('Thank you for dining with us!');
   addText('Please retain receipt for your records.');
-  addText('Powered by ADK Cafe POS');
+  addText('Softwared by ADK Software Solutions');
 
   add(ESCPOS_COMMANDS.FEED_3);
   add(ESCPOS_COMMANDS.CUT_PAPER);

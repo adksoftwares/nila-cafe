@@ -90,7 +90,7 @@ export function downloadReceiptText(receipt, shopName = 'ADK Cafe') {
     divider,
     centerText('Thank you for dining with ADK Cafe!'),
     centerText('Please retain receipt for your records.'),
-    centerText('Powered by ADK POS'),
+    centerText('Softwared by ADK Software Solutions'),
     doubleDivider,
     '\n'
   ];
