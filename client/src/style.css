@@ -131,3 +131,49 @@
   .stat-grid,
   .product-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* Professional visual refresh — refined cafe workspace */
+:root{
+  font-family:'DM Sans',sans-serif;
+  color:#18251f;background:#f5f7f5;
+  --ink:#18251f;--muted:#75827b;--line:#e5ebe6;
+  --blue:#176b52;--blue-dark:#105640;--pale:#e8f3ee;--green:#176b52;
+}
+body{background:#f5f7f5;color:var(--ink);letter-spacing:-.01em}
+.sidebar{background:#fbfcfb;border-right-color:#e5ebe6;padding:26px 18px 18px}
+.brand{font-family:'Manrope',sans-serif;letter-spacing:-.9px;color:#17251e}
+.brand-mark{background:#176b52;box-shadow:0 5px 14px #176b5230;border-radius:10px}
+.brand-dot{color:#176b52}
+.workspace{border-color:#e5ebe6;background:#fff;border-radius:13px;margin-top:30px}
+.workspace-icon,.help-icon{background:#e8f3ee;color:#176b52}
+.nav-caption,.eyebrow{color:#87948c;letter-spacing:1.25px}
+.nav-item{border-radius:10px;color:#64736b;padding:12px 13px;transition:background .18s ease,color .18s ease}
+.nav-item:hover{background:#f0f5f1}
+.nav-item.active{background:#e8f3ee;color:#176b52}
+.main-area{background:#f5f7f5}
+.topbar{background:#fbfcfb;border-bottom-color:#e5ebe6}
+.page-heading h1{font-family:'Manrope',sans-serif;letter-spacing:-1.1px;color:#17251e}
+.page-heading p,.muted{color:#78867e}
+.date-chip{border:1px solid #e5ebe6;background:#fff;border-radius:999px;padding:9px 13px}
+.card,.panel,.cart-panel,.catalog-panel,.stat-card{border-color:#e5ebe6!important;border-radius:15px!important;box-shadow:0 4px 18px #1b35200a!important}
+button.primary-btn,.primary-btn{background:#176b52;border-radius:11px;box-shadow:0 5px 12px #176b5220}
+button.primary-btn:hover,.primary-btn:hover{background:#105640}
+input,select{border-color:#dfe7e1!important;border-radius:10px!important}
+input:focus,select:focus{border-color:#176b52!important;box-shadow:0 0 0 3px #176b521a}
+.login-screen{background:#f5f7f5}
+.login-art{background:linear-gradient(145deg,#123d30 0%,#176b52 58%,#2d8064 100%)}
+.login-message h1{font-family:'Manrope',sans-serif;letter-spacing:-1.8px}
+.login-panel{background:#fbfcfb}
+.login-form{max-width:420px}
+.login-form h2{font-family:'Manrope',sans-serif;letter-spacing:-.8px}
+.login-form input{min-height:48px;background:#fff}
+.login-form .primary-btn{min-height:49px}
+.login-legal{color:#849189}
+@media(max-width:700px){
+ .main-area{background:#f5f7f5}
+ .topbar{background:#fbfcfb}
+ .page-heading{gap:12px}
+ .page-heading h1{font-size:25px}
+ .nav-item{min-height:44px}
+}
