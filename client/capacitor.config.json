@@ -1,0 +1,13 @@
+{
+  "appId": "com.adksoftwares.nilacafe",
+  "appName": "Nila Cafe",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#f6f8fb"
+  }
+}

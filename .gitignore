@@ -4,3 +4,6 @@ server/.env
 .env
 *.log
 .DS_Store
+
+# Mobile build config with production API URL (contains no secrets, but environment specific)
+client/.env.mobile

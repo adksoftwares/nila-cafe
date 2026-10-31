@@ -17,7 +17,7 @@ import {
 } from '../state.js';
 import { calculateBillTaxes } from '../utils/tax.js';
 import { recordAuditEvent } from '../utils/audit.js';
-import { auth, roles } from '../middleware/auth.js';
+import { auth, roles, pinLimiter } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { checkoutSchema, voidSaleSchema } from '../schemas/sales.js';
 
@@ -668,7 +668,7 @@ router.get('/', auth, roles('admin', 'owner', 'manager', 'cashier', 'waiter'), a
 });
 
 // Sales: Manager Void Authorization & Inventory Restock
-router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), validateBody(voidSaleSchema), async (req, res) => {
+router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), pinLimiter, validateBody(voidSaleSchema), async (req, res) => {
   const saleId = req.params.id;
   const { reason, managerPin } = req.body;
 
@@ -696,18 +696,18 @@ router.post('/:id/void', auth, roles('owner', 'manager', 'cashier', 'waiter'), v
             authorizer = m;
             break;
           }
-        } else if (providedPin === '8844') {
-          pinValid = true;
-          authorizer = m;
-          break;
         }
+        // Managers without a stored PIN hash cannot authorize voids in pool mode.
+        // PIN hashes are set in the database (see seed.js).
       }
       if (!pinValid) {
         return res.status(403).json({ error: 'Invalid Manager PIN. Authorization rejected.' });
       }
     } else {
-      if (providedPin !== '8844') {
-        return res.status(403).json({ error: 'Invalid Manager PIN. Use default PIN 8844.' });
+      // Demo mode only (no database). Never reachable when a database is configured.
+      const demoPin = process.env.DEMO_MANAGER_PIN;
+      if (!demoPin || process.env.NODE_ENV === 'production' || providedPin !== demoPin) {
+        return res.status(403).json({ error: 'Invalid Manager PIN. Authorization rejected.' });
       }
       authorizer = { id: 'u-manager', name: 'Store Manager' };
     }

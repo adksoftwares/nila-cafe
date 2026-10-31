@@ -26,6 +26,15 @@ export const authLimiter = rateLimit({
   message: { error: 'Too many login attempts, please try again after 15 minutes.' }
 });
 
+// Manager PIN is only 4-8 digits, so brute force must be throttled hard.
+export const pinLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many PIN attempts, please try again after 15 minutes.' }
+});
+
 export const safeUser = u => ({
   id: u.id,
   name: u.name,

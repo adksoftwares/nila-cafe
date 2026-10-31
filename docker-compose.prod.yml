@@ -1,18 +1,21 @@
+# Production stack. All secrets come from the environment (see .env.example).
+# Copy .env.example to .env, set every CHANGE_ME value, then run:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: nila_cafe_db
-      POSTGRES_USER: nila_user
-      POSTGRES_PASSWORD: nila_secure_password
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-nila_cafe_db}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    # Database is intentionally NOT published to the host. Only the api container reaches it.
     volumes:
       - nila_pg_data:/var/lib/postgresql/data
       - ./server/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nila_user -d nila_cafe_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -31,16 +34,17 @@ services:
     environment:
       PORT: 4000
       NODE_ENV: production
-      DATABASE_URL: postgres://nila_user:nila_secure_password@db:5432/nila_cafe_db
-      JWT_SECRET: nila-super-secret-jwt-token-change-in-prod-xyz789
-      CLIENT_ORIGIN: "http://localhost,http://localhost:80,http://localhost:5173"
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:-nila_cafe_db}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (>= 32 random chars)}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:?Set CLIENT_ORIGIN in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     ports:
       - "4000:4000"
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:4000/api/health/liveness"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -55,6 +59,9 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
+      args:
+        # Must be the public URL of the API as the browser sees it.
+        VITE_API_URL: ${VITE_API_URL:?Set VITE_API_URL in .env}
     restart: unless-stopped
     ports:
       - "80:80"

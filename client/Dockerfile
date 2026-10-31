@@ -6,6 +6,9 @@ COPY package.json ./
 RUN npm install
 
 COPY . .
+# Public API URL is baked into the static build (Vite reads VITE_* at build time)
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # Production Web Server Stage (Nginx Alpine)
@@ -16,6 +19,7 @@ WORKDIR /usr/share/nginx/html
 RUN rm -rf ./*
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx-security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 EXPOSE 80
 

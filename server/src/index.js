@@ -33,13 +33,27 @@ if (process.env.NODE_ENV === 'production' && (!JWT_SECRET || JWT_SECRET === 'dev
   process.exit(1);
 }
 
+if (process.env.NODE_ENV === 'production' && !process.env.DATABASE_URL) {
+  console.error('FATAL: DATABASE_URL must be configured in production (demo mode is disabled).');
+  process.exit(1);
+}
+
 // Security headers & Rate limiting
 app.use(helmet());
+app.disable('x-powered-by');
 app.use('/api/', apiLimiter);
 
 // CORS & Body parsing
+// Explicit allow-list only. Dev falls back to localhost; production must set CLIENT_ORIGIN.
+const allowedOrigins = process.env.CLIENT_ORIGIN
+  ? process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
+  : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'];
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',') : true,
+  origin: (origin, cb) => {
+    // Non-browser clients (no Origin header) and allow-listed origins only
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
