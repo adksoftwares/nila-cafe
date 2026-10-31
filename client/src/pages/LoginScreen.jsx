@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Command } from 'lucide-react';
 
 export default function LoginScreen({ onLogin, loading, error, onFlash }) {
-  const [email, setEmail] = useState('owner@counterpoint.local');
-  const [password, setPassword] = useState('Owner123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -97,47 +97,6 @@ export default function LoginScreen({ onLogin, loading, error, onFlash }) {
           <button className="primary-btn full" disabled={loading}>
             {loading ? 'Signing in…' : 'Sign in'} <span>→</span>
           </button>
-
-          <div className="demo-box">
-            <strong>One-click Demo Accounts</strong>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('owner@counterpoint.local');
-                setPassword('Owner123!');
-              }}
-            >
-              Cafe Owner <span>owner@counterpoint.local</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('manager@counterpoint.local');
-                setPassword('Manager123!');
-              }}
-            >
-              Store Manager <span>manager@counterpoint.local</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('cashier@counterpoint.local');
-                setPassword('Cashier123!');
-              }}
-            >
-              Cashier (Till Operator) <span>cashier@counterpoint.local</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail('admin@counterpoint.local');
-                setPassword('Admin123!');
-              }}
-            >
-              Platform Admin <span>admin@counterpoint.local</span>
-            </button>
-            <small>Demo Password: Owner123! / Manager123! / Cashier123! · Manager PIN: 8844</small>
-          </div>
 
           <p className="login-legal">Secure token authentication · Softwared by <strong>ADK Software Solutions</strong></p>
         </form>

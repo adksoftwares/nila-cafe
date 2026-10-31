@@ -7,8 +7,8 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "build:mobile": "vite build --mode mobile && npx cap sync android",
-    "android": "npx cap open android"
+    "build:mobile": "cd android && gradle assembleDebug",
+    "android": "cd android && gradle installDebug"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.3",
